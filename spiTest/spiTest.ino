@@ -3,6 +3,7 @@
 #include "background.h"
 #include "shrimp.h"
 #include "pork.h"
+#include "dragon.h"
 // ESP8266:
 #define TFT_DC 15
 #define TFT_CS 0
@@ -25,6 +26,9 @@ int16_t avatar2Y = SCREENHEIGHT / 2;
 int16_t avatar2vX = 0;
 int16_t avatar2vY = 0;
 
+int16_t avatar3X = SCREENWIDTH - DRAGON_WIDTH;
+int16_t avatar3Y = SCREENHEIGHT - DRAGON_HEIGHT;
+
 int bumps = 0; //counter variable for changing background image
 int currentBackground = 0;
 //Buffer for rendering, 2 Scanlines that alters
@@ -41,8 +45,8 @@ void setup() {
   avatar2vX = random(MINSPEED , MAXSPEED);
   avatar2vY = random(MINSPEED , MAXSPEED);
 
-  background[0] = greenBGBitmap;
-  background[1] = japanBGBitmap;
+  background[0] = whiteBearHome;
+  background[1] = friedPorkHome;
   //Serial.println("drawRGBBitmap");
   tft.drawRGBBitmap(
     0,
@@ -268,8 +272,8 @@ void loop() {
         int16_t old_avatar2X = avatar2X;
         int16_t old_avatar2Y = avatar2Y;
         moveCharacters();
-        renderCharacter(old_avatar1X, old_avatar1Y, avatar1X, avatar1Y, PORK_WIDTH, PORK_HEIGHT, porkBitmap, PorkMask, SCREENWIDTH);
-        renderCharacter(old_avatar2X, old_avatar2Y, avatar2X, avatar2Y, PORK_WIDTH, PORK_HEIGHT, porkBitmap, PorkMask, SCREENWIDTH);
+        renderCharacter(old_avatar1X, old_avatar1Y, avatar1X, avatar1Y, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask, SCREENWIDTH);
+        renderCharacter(old_avatar2X, old_avatar2Y, avatar2X, avatar2Y, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask, SCREENWIDTH);
   }else if (gameMode == 2){
         int16_t old_avatar1X = avatar1X;
         int16_t old_avatar1Y = avatar1Y;
@@ -277,7 +281,8 @@ void loop() {
         int16_t old_avatar2Y = avatar2Y;
         moveCharacters();
         renderCharacter(old_avatar1X, old_avatar1Y, avatar1X, avatar1Y, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask, SCREENWIDTH);
-        renderCharacter(old_avatar2X, old_avatar2Y, avatar2X, avatar2Y, PORK_WIDTH, PORK_HEIGHT, porkBitmap, PorkMask, SCREENWIDTH);
+        renderCharacter(old_avatar2X, old_avatar2Y, avatar2X, avatar2Y, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask, SCREENWIDTH);
+        renderCharacter(avatar3X, avatar3Y, avatar3X, avatar3Y, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask, SCREENWIDTH);
   }
   
 }
