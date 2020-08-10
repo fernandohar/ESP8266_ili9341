@@ -1,3 +1,6 @@
+#include <NTPClient.h>
+#include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
 #include "SPI.h"
 #include <Adafruit_ILI9341.h>
 #include "background.h"
@@ -22,6 +25,8 @@ unsigned long gameModeTimer = 0;
 uint8_t gameMode = 0;
 
 const uint16_t *background [NUMBACKGROUND]; //pointer to the background bitmaps
+const uint16_t *numberBitmap[10] = {ZeroBitmap, OneBitmap, TwoBitmap, ThreeBitmap, FourBitmap, FiveBitmap, SixBitmap, SevenBitmap, EightBitmap, NineBitmap};
+const uint8_t *numberMask[10] = {ZeroMask, OneMask, TwoMask, ThreeMask, FourMask, FiveMask, SixMask, SevenMask, EightMask, NineMask};
 int16_t avatar1X = 0;
 int16_t avatar1Y = 0;
 int16_t avatar1vX = 0;
@@ -41,34 +46,50 @@ int currentBackground = 0;
 //One is rendered to while the other is transferred via DMA
 static uint16_t renderbuf[2][SCREENWIDTH];
 
+const char *ssid     = "SSID";
+const char *password = "PASSWORD";
+
+WiFiUDP ntpUDP;
+const long utcOffsetInSeconds = 28800;//For UTC +8.00 : 8 * 60 * 60 : 3600 * 8 = 28800
+
+NTPClient timeClient(ntpUDP, "asia.pool.ntp.org", utcOffsetInSeconds);
+
+
 void setup() {
+  WiFi.begin(ssid, password);
+  
   Serial.begin(9600);
   tft.begin();
 
-
+  while ( WiFi.status() != WL_CONNECTED ) {
+    delay ( 500 );
+    Serial.print ( "." );
+  }
+  timeClient.begin();
+  
   background[0] = whiteBearHome;
   background[1] = friedPorkHome;
 
-//  tft.drawRGBBitmap(
-//    0,
-//    0,
-//    background[currentBackground],
-//    SCREENWIDTH, SCREENHEIGHT);
- changeGameMode(gameMode);
+  //  tft.drawRGBBitmap(
+  //    0,
+  //    0,
+  //    background[currentBackground],
+  //    SCREENWIDTH, SCREENHEIGHT);
+  changeGameMode(gameMode);
 }
 uint8_t shakeseed = 0;
 unsigned long shaketimer = 0;
 void shakeCharacters() {
-  if(millis() - shaketimer > 300){ //prevemt shaking too fast
+  if (millis() - shaketimer > 300) { //prevemt shaking too fast
     shaketimer = millis();
-  shakeseed = 1 - shakeseed;
-  int8_t dx = (shakeseed > 0) ? -2 : 2;
-  avatar1X += dx;
-  avatar1Y += dx * -1;
-  //avatar2X += dx;
-  avatar2Y += (dx * 4);
-  avatar3X += (dx * -1);
-  //avatar3Y += dx;
+    shakeseed = 1 - shakeseed;
+    int8_t dx = (shakeseed > 0) ? -2 : 2;
+    avatar1X += dx;
+    avatar1Y += dx * -1;
+    //avatar2X += dx;
+    avatar2Y += (dx * 4);
+    avatar3X += (dx * -1);
+    //avatar3Y += dx;
   }
 }
 
@@ -309,20 +330,26 @@ void changeGameMode(uint8_t gameMode) {
     avatar2Y = SCREENHEIGHT - PORK_HEIGHT - 42;
     avatar3X = SCREENWIDTH - DRAGON_WIDTH - 3;
     avatar3Y = SCREENHEIGHT - DRAGON_HEIGHT - 42;
-    
-   
+
+
     avatar1vX = random(MINSPEED , MAXSPEED);
     avatar1vY = random(MINSPEED , MAXSPEED);
-   
+
     avatar2vX = random(MINSPEED , MAXSPEED);
     avatar2vY = random(MINSPEED , MAXSPEED);
-  
+
     avatar3vX = random(MINSPEED , MAXSPEED);
     avatar3vY = random(MINSPEED , MAXSPEED);
     setBackground(1);
   }
 }
-void displayClock(){
+
+bool showColon = true;
+void displayClock() {
+  timeClient.update();
+  uint8_t hour = timeClient.getHours();
+  uint8_t minute = timeClient.getMinutes();
+  
   uint8_t x1,  x2, x3, x4, x5, y;
   x1 = 20;
   y = 20;
@@ -330,11 +357,19 @@ void displayClock(){
   x3 = x2 + NUMBER_WIDTH;
   x4 = x3 + NUMBER_WIDTH;
   x5 = x4 + NUMBER_WIDTH;
-  renderCharacter(x1, 20, x1, 20, NUMBER_WIDTH, FONT_HEIGHT, ZeroBitmap, ZeroMask, SCREENWIDTH);
-  renderCharacter(x2, 20, x2, 20, NUMBER_WIDTH, FONT_HEIGHT, OneBitmap, OneMask, SCREENWIDTH);
-  renderCharacter(x3, 20, x3, 20, NUMBER_WIDTH, FONT_HEIGHT, SlashBitmap, SlashMask, SCREENWIDTH);
-  renderCharacter(x4, 20, x4, 20, NUMBER_WIDTH, FONT_HEIGHT, ThreeBitmap, ThreeMask, SCREENWIDTH);
-  renderCharacter(x5, 20, x5, 20, NUMBER_WIDTH, FONT_HEIGHT, FourBitmap, FourMask, SCREENWIDTH);
+  byte tempDigit1  = hour / 10;
+  byte tempDigit2 = hour % 10;
+  byte tempDigit3 = minute / 10;
+  byte tempDigit4 = minute %10;
+  
+  renderCharacter(x1, 20, x1, 20, NUMBER_WIDTH, FONT_HEIGHT, numberBitmap[tempDigit1], numberMask[tempDigit1], SCREENWIDTH);
+  renderCharacter(x2, 20, x2, 20, NUMBER_WIDTH, FONT_HEIGHT, numberBitmap[tempDigit2], numberMask[tempDigit2], SCREENWIDTH);
+  if (showColon){
+    renderCharacter(x3, 20, x3, 20, NUMBER_WIDTH, FONT_HEIGHT, ColonBitmap, ColonMask, SCREENWIDTH);
+    showColon != showColon;
+  }
+  renderCharacter(x4, 20, x4, 20, NUMBER_WIDTH, FONT_HEIGHT, numberBitmap[tempDigit3], numberMask[tempDigit3], SCREENWIDTH);
+  renderCharacter(x5, 20, x5, 20, NUMBER_WIDTH, FONT_HEIGHT, numberBitmap[tempDigit4], numberMask[tempDigit4], SCREENWIDTH);
 }
 void loop() {
   if (millis() - gameModeTimer >= 10000) {
@@ -362,7 +397,7 @@ void loop() {
       renderCharacter(old_avatar3X, old_avatar3Y, avatar3X, avatar3Y, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask, SCREENWIDTH);
 
     } else if (gameMode == 1) {
-      
+
       int16_t old_avatar1X = avatar1X;
       int16_t old_avatar1Y = avatar1Y;
       int16_t old_avatar2X = avatar2X;
@@ -386,5 +421,5 @@ void loop() {
 
     displayClock();
   }
-  
+
 }
