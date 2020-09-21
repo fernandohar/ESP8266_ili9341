@@ -9,8 +9,8 @@ void GameScene  :: renderScene() {
   int16_t renderableMiny[numAvatar];
   int16_t renderableMaxx[numAvatar];
   int16_t renderableMaxy[numAvatar];
-
-
+  const uint16_t RENDERABLEWIDTH = SCREENWIDTH - 1;
+  const uint16_t RENDERABLEHEIGHT = SCREENHEIGHT - 1;
   int numRenderableAvatar = 0;
 
   //Calculate the renderable area for each avatar, and found out which should be drawn on screen
@@ -27,7 +27,7 @@ void GameScene  :: renderScene() {
     float avatarMaxx = ((oldX < newX) ? newX : oldX) + avatar->width - 1;
     float avatarMaxy = ((oldY < newY) ? newY : oldY) + avatar->height - 1;
 
-    if (avatarMinx > SCREENWIDTH || avatarMaxx < 0 || avatarMiny > SCREENHEIGHT || avatarMaxy < 0) { //No renderable pixels (old and new location falls outside screen
+    if (avatarMinx > RENDERABLEWIDTH || avatarMaxx < 0 || avatarMiny > RENDERABLEHEIGHT || avatarMaxy < 0) { //No renderable pixels (old and new location falls outside screen
       continue;
     }
     renderableAvatar[numRenderableAvatar] = avatar; //Shortlist renderable Avatar
@@ -104,7 +104,7 @@ void GameScene  :: renderScene() {
         continue;
       } else {
         //add up the renderable area
-
+        toBeRendered2RenderableMap[toBeRenderedIndex] = j;
         toBeRendered[toBeRenderedIndex++] = renderableAvatar[j];
         rendered[j] = true;
         minx = (minx < renderableMinx[j]) ? minx : renderableMinx[j];
@@ -123,8 +123,8 @@ void GameScene  :: renderScene() {
       //cap the drawing window to the screen
       minx = (minx < 0) ? 0 : minx;
       miny = (miny < 0) ? 0 : miny;
-      maxx = (maxx > SCREENWIDTH) ? SCREENWIDTH : maxx;
-      maxy = (maxy > SCREENHEIGHT) ? SCREENHEIGHT : maxy;
+      maxx = (maxx > RENDERABLEWIDTH) ? RENDERABLEWIDTH : maxx;
+      maxy = (maxy > RENDERABLEHEIGHT) ? RENDERABLEHEIGHT : maxy;
       uint16_t renderWidth = maxx - minx + 1;
       uint16_t renderHeight = maxy - miny + 1;
 
@@ -161,28 +161,41 @@ void GameScene  :: renderScene() {
         //renderWidth = how many pixel to render
         //destPtr = Buffer's pointer
 
-        for (int i = 0; i < toBeRenderedIndex; ++i) {
-          int mappedIndex = toBeRendered2RenderableMap[i];
+        int minLayerIndex = -1;
+        for (int i = 0; i < toBeRenderedIndex; ++i){
+           minLayerIndex = getNextRenderAvatar(minLayerIndex, toBeRendered2RenderableMap, toBeRenderedIndex);
+           Avatar* toRender = renderableAvatar[minLayerIndex];
+           
+        //}
+
+//        for (int i = 0; i < toBeRenderedIndex; ++i) {
+//          int mappedIndex = toBeRendered2RenderableMap[i];
+         
+          
           //renderBuf[][0] --> minx in Screen Coordinate
           //first pixel to draw should be Avatar's x (screen Coordinte)
-          int16_t pos = toBeRendered[i]->x - minx;   //  |0    [10 (minx)    renderx (20)  --> pos of buffer = 10
+          //int16_t pos = toBeRendered[i]->x - minx;   //  |0    [10 (minx)    renderx (20)  --> pos of buffer = 10
+          int16_t pos = toRender->x - minx;   //  |0    [10 (minx)    renderx (20)  --> pos of buffer = 10
+          
           //  renderx -10   |0[0 (minx)   pos --> 0
           pos = (pos > 0) ? pos : 0;
           destPtr =  &renderbuf[bufIdx][pos]; //Move the pointer of renderBuf so that it matches avatar's position for immediate writing to
-          int16_t bitmapY = (miny + y) - toBeRendered[i]->y;
-          if (bitmapY >= 0 &&  bitmapY < toBeRendered[i]->height) {
+          //int16_t bitmapY = (miny + y) - toBeRendered[i]->y;
+          int16_t bitmapY = (miny + y) - toRender->y;
+//          if (bitmapY >= 0 &&  bitmapY < toBeRendered[i]->height) {
+          if (bitmapY >= 0 &&  bitmapY < toRender->height) {
 #ifdef DEBUG_RENDERSCENE
             Serial.print("         drawAvatar,#[");
             Serial.print(i);
-            Serial.print("] renderableMaxy ");
-            Serial.print(renderableMaxy[mappedIndex]);
+            Serial.print("] ");
             Serial.print("bitmapY");
             Serial.println(bitmapY);
 #endif
-            drawAvatar2Buffer(toBeRendered[i], destPtr, bitmapY);
+//            drawAvatar2Buffer(toBeRendered[i], destPtr, bitmapY);
+            drawAvatar2Buffer(toRender, destPtr, bitmapY);
           }
-          toBeRendered[i]->savePreviousRenderPos();
-
+          //toBeRendered[i]->savePreviousRenderPos();
+          toRender->savePreviousRenderPos();
         }
 
         //Finished drawing to Buffer, flush buffer to TFT
@@ -197,6 +210,16 @@ void GameScene  :: renderScene() {
 #endif
 }
 
+int GameScene::getNextRenderAvatar(int previousMin, int toBeRendered2RenderableMap[], int toBeRenderedIndex){
+   int minLayerIndex = 999;
+   for (int i = 0; i < toBeRenderedIndex; ++i){
+        if(toBeRendered2RenderableMap[i] <= previousMin){
+          continue;
+        }
+        minLayerIndex = min(minLayerIndex, toBeRendered2RenderableMap[i]);  
+   }
+   return minLayerIndex;  
+}
 void GameScene::drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *destPtr) {
   uint16_t c;
   for (int i = 0; i < width; ++i) {
@@ -209,7 +232,7 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y)
 #ifdef DEBUG_DRAWAVATAR
   Serial.println("drawAvatar2Buffer");
 #endif
-  int renderwidth = (avatar->x < 0) ? (avatar->width - avatar->x) : avatar->width;
+  int renderwidth = (avatar->x < 0) ? (avatar->width + avatar->x) : avatar->width; //note the sign of x is -'ve in first condition.
   uint16_t c;
   int16_t bw = (avatar->width + 7) / 8; //number of bytes for each row of mask
 
@@ -227,7 +250,11 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y)
     nextMaskOffset = 8 - bitmapoffset;
     maskRead  = false;
 #ifdef DEBUG_DRAWAVATAR
-    Serial.print("PrefetchMask = true");
+    Serial.print("PrefetchMask = true ");
+    Serial.print(" renderwidth ");
+    Serial.print(renderwidth);
+    Serial.print(" y " );
+    Serial.print( y);
     Serial.print("bitmapoffset ");
     Serial.print(bitmapoffset);
     Serial.print(" maskoffset ");
@@ -247,16 +274,15 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y)
     if ((x + bitmapoffset) & 7) {   //for x = 1 ... 7, (x & 7) is true
       if (maskRead) {
         maskByte <<= 1;
-#ifdef DEBUG_DRAWAVATAR
+#ifdef DEBUG_DRAWAVATAR_1
         Serial.print(" << ");
-        delay(50); //so that Serial monitor is not jammed
 #endif
       }
       maskRead = true;
     } else { //x = 0
       //if(!prefetchMask){
       maskByte = pgm_read_byte( &(avatar->mask[ y * bw + (x + bitmapoffset) / 8]));
-#ifdef DEBUG_DRAWAVATAR
+#ifdef DEBUG_DRAWAVATAR_1
       Serial.print(" Read Mask at Address");
       Serial.println(y * bw + (x + bitmapoffset) / 8);
 #endif
@@ -269,6 +295,9 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y)
     } else {
       *destPtr++;
     }
+ #ifdef DEBUG_DRAWAVATAR
+        delay(10); //so that Serial monitor is not jammed
+#endif   
   }
 }
 

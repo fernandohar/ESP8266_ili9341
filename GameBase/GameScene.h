@@ -49,7 +49,8 @@ class GameScene {
     //renderCharacter is depreciated, overlapping object are not rendered correctly. use renderScene() instead 
     void renderCharacter(int16_t oldX, int16_t oldY, int16_t newX, int16_t newY, int16_t imageWidth, int16_t imageHeight, const uint16_t imageBitmap[],
                             const uint8_t imageMask[], int16_t backgroundWidth);
-    
+  private:
+   int getNextRenderAvatar(int previousMin, int toBeRendered2RenderableMap[], int toBeRenderedIndex);
 };
 
 #endif

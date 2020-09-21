@@ -58,39 +58,46 @@ class Scene_BearHome : public GameScene{
   void initScene(){
     wasTouching = false;
     Avatar* avatar = NULL;
-    avatar = new Avatar(-10, 0, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+    //Lowest layer ... top layer
+    avatar = new Avatar(100, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask); //100X67
+    appendAvatar(avatar);
+    avatar->setVelocity(0, 1);
+    
+    avatar = new Avatar(-30, 0, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
     appendAvatar(avatar);
     
-    avatar = new Avatar(-5, 51, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+    avatar = new Avatar(-25, 51, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
     appendAvatar(avatar);
 
-    avatar = new Avatar(-1, 102, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+    avatar = new Avatar(-20, 102, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
     appendAvatar(avatar);
 
-        avatar = new Avatar(-0, 153, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
-    appendAvatar(avatar);
-//
-        avatar = new Avatar(5, 204, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+        avatar = new Avatar(-10, 153, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
     appendAvatar(avatar);
 
-        avatar = new Avatar(10, 255, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+    avatar = new Avatar(5, 204, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
     appendAvatar(avatar);
 
-    
-   avatar = new Avatar(-50, 220, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask); //100X67
+    avatar = new Avatar(10, 255, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+    avatar->setVelocity(0, -1);
     appendAvatar(avatar);
-    
-    //avatar->setVelocity(0, -1);
+
+   //Top Layer 
+
    
-    
-//
-//    avatar = new Avatar(100,-10, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask); //40X47
-//    appendAvatar(avatar);
-   
+    avatar = new Avatar(193, 224, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+    appendAvatar(avatar);
 
+   avatar = new Avatar(0,200, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask); //40X47
+   appendAvatar(avatar);
+   avatar->setVelocity(1, 0);
+   
+    avatar = new Avatar(194, 160, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask); //47 X 51
+    appendAvatar(avatar);    
     
 //    avatar = new Avatar(100, 271, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask); //44 X 60
 //    appendAvatar(avatar);
+
     
     drawBackground(whiteBearHome);
   }
