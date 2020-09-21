@@ -15,37 +15,37 @@ class Scene_PorkHome : public GameScene {
     };
 
 
-    void debug(){
-      Avatar* avatar = avatars[0];
-      Serial.print("Avatar0 (x, y): ");
-      Serial.print(avatar->x);
-      Serial.print(", ");
-      Serial.print(avatar->y);
-      Serial.print(" (velocity x, y): ");
-      Serial.print(avatar->velocity.x);
-      Serial.print(", ");
-       Serial.println(avatar->velocity.y);
+    //    void debug(){
+    //      Avatar* avatar = avatars[0];
+    //      Serial.print("Avatar0 (x, y): ");
+    //      Serial.print(avatar->x);
+    //      Serial.print(", ");
+    //      Serial.print(avatar->y);
+    //      Serial.print(" (velocity x, y): ");
+    //      Serial.print(avatar->velocity.x);
+    //      Serial.print(", ");
+    //       Serial.println(avatar->velocity.y);
+    //
+    //      avatar = avatars[1];
+    //      Serial.print("Avatar1 (x, y): ");
+    //      Serial.print(avatar->x);
+    //      Serial.print(", ");
+    //      Serial.print(avatar->y);
+    //      Serial.print(" (velocity x, y): ");
+    //      Serial.print(avatar->velocity.x);
+    //      Serial.print(", ");
+    //       Serial.println(avatar->velocity.y);
+    //    }
 
-      avatar = avatars[1];
-      Serial.print("Avatar1 (x, y): ");
-      Serial.print(avatar->x);
-      Serial.print(", ");
-      Serial.print(avatar->y);
-      Serial.print(" (velocity x, y): ");
-      Serial.print(avatar->velocity.x);
-      Serial.print(", ");
-       Serial.println(avatar->velocity.y);
-    }
-
-    unsigned long debugTimer = 0;
+    //unsigned long debugTimer = 0;
     void update(boolean isTouching, uint16_t touchX, uint16_t touchY, boolean* needChangeScene, int* nextSceneIndex) {
-      
-      if(millis() - debugTimer > 1000){
-        debug();
-        debugTimer = millis();
-      }
-      
-      
+
+      //      if(millis() - debugTimer > 1000){
+      //        debug();
+      //        debugTimer = millis();
+      //      }
+      //
+
       if (isTouching) {
 
         wasTouching = true;
@@ -59,47 +59,41 @@ class Scene_PorkHome : public GameScene {
       }
 
       //Suppose we use Constant Game update speed
-      
+
       for (int i = 0; i < numAvatar; ++i) {
         Avatar* avatar = avatars[i];
         if (avatar != NULL) {
-         if(avatar->velocity.y == 0 && (avatar->y + avatar->height) < SCREENHEIGHT){
+#ifdef PHYSICS
+          if (avatar->velocity.y == 0 && (avatar->y + avatar->height) < SCREENHEIGHT) {
             avatar->velocity.y = 0.1;
-         }
-         avatar->velocity.y +=  0.2;
-         //avatar->velocity.y +=  (avatar->velocity.y == 0) ? 0.1 : abs(avatar->velocity.y) *0.5;
-         
-//         if(avatar->velocity.y > 0){
-//          avatar->velocity.y *= 1.02;
-//         }else{
-//          avatar->velocity.y *= 0.98;
-//         }
-         
+          }
+
+          avatar->velocity.y +=  0.2;
+#endif
           avatar->updatePos();
           boundToScreen(avatar);
 
         }
       }
-      for(int i = 0; i < numAvatar; ++i){
+      for (int i = 0; i < numAvatar; ++i) {
         Avatar* avatar1 = avatars[i];
-          for(int j = 0; j < numAvatar; ++j){
-            if(i == j){
-              continue;
-            }
-            Avatar* avatar2 = avatars[j];
-            if(physics::aabbTest(*avatar1, *avatar2)){
-              
-              //debug();
-              //Serial.println("resolveCollision");
-              physics::resolveCollision(avatar1, avatar2);
-              //debug();
-            }
-            
+        for (int j = 0; j < numAvatar; ++j) {
+          if (i == j) {
+            continue;
           }
+          Avatar* avatar2 = avatars[j];
+#ifdef PHYSICS
+          if (physics::aabbTest(*avatar1, *avatar2)) {
+
+            physics::resolveCollision(avatar1, avatar2);
+
+          }
+#endif
+        }
       }
 
     }
-    
+
     void boundToScreen(Avatar* avatar) {
       if ( (avatar->x <= 0) || ((avatar->x + avatar->width) >= SCREENWIDTH)) {
         avatar->velocity.x *= -1;//Change the movement direction
@@ -107,82 +101,91 @@ class Scene_PorkHome : public GameScene {
       }
       if (avatar->y <= 0) {
         avatar->y = 0;
-        //avatar->velocity.y *= -1;
+        //
+#ifdef PHYSICS
         avatar->velocity.y *= -0.8; //We hit the top, lost energy
-        
+#else
+        avatar->velocity.y *= -1;
+#endif
+
         //avatar->dy *= -1;
       } else if ((avatar->y + avatar->height) >= SCREENHEIGHT) {
         avatar->y = SCREENHEIGHT - avatar->height;
-        //avatar->velocity.y *= -1;
+        //
+#ifdef PHYSICS        
         avatar->velocity.y *= -0.85; //suppose we have energy lost in both x and y when hit the floor
         avatar->velocity.x *= 0.9;
+#else
+        avatar->velocity.y *= -1;
+#endif
       }
     }
 
-    
+
     void render() {
-      for (int i = 0; i < numAvatar; ++i) {
-        Avatar* avatar = avatars[i];
-        if (avatar != NULL) {
-          renderCharacter(avatar->previousRenderedX, avatar->previousRenderedY, avatar->x, avatar->y, avatar->width, avatar->height, avatar->bitmap, avatar->mask, SCREENWIDTH); //temp
-          avatar->savePreviousRenderPos();
-        }
-      }
+      renderScene();
+      //      for (int i = 0; i < numAvatar; ++i) {
+      //        Avatar* avatar = avatars[i];
+      //        if (avatar != NULL) {
+      //          renderCharacter(avatar->previousRenderedX, avatar->previousRenderedY, avatar->x, avatar->y, avatar->width, avatar->height, avatar->bitmap, avatar->mask, SCREENWIDTH); //temp
+      //          avatar->savePreviousRenderPos();
+      //        }
+      //      }
     }
 
     void initScene() {
       wasTouching = false;
       //if (avatar1 == NULL){
       Avatar* avatar = NULL;
-      
+
       avatar = new Avatar(0, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask);
       avatar->setVelocity(1, 1);
       appendAvatar(avatar);
-      
+
       avatar = new Avatar(50, 0, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask);
-      avatar->setVelocity(0, 0);      
+      avatar->setVelocity(-1, 1);
       appendAvatar(avatar);
-      
+
       avatar = new Avatar(100, 0, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask);
-      avatar->setVelocity(0, 0);
+      avatar->setVelocity(1, 1);
       appendAvatar(avatar);
 
       avatar = new Avatar(150, 0, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
-       avatar->setVelocity(0.0, 0);
+      avatar->setVelocity(-1, -1);
       appendAvatar(avatar);
 
-//      avatar = new Avatar(0, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask);
-//      avatar->setVelocity(15, 15);
-//      appendAvatar(avatar);
-//      
-//     avatar = new Avatar(100, 100, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask);
-//      avatar->setVelocity(12, -12);
-//      appendAvatar(avatar);
-//      
-//      avatar = new Avatar(200, 200, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask);
-//      avatar->setVelocity(5, -12);
-//      appendAvatar(avatar);
-//      avatar = new Avatar(0, 300, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
-//       avatar->setVelocity(-12, -15);
-//      appendAvatar(avatar);
-//
-//   
-//      avatar = new Avatar(0, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask);
-//      avatar->setVelocity(35, 15);
-//      appendAvatar(avatar);
-//      
-//     avatar = new Avatar(100, 100, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask);
-//      avatar->setVelocity(22, -12);
-//      appendAvatar(avatar);
-//      
-//      avatar = new Avatar(200, 200, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask);
-//      avatar->setVelocity(35, -12);
-//      appendAvatar(avatar);
-//
-//      avatar = new Avatar(0, 300, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
-//       avatar->setVelocity(-22, -15);
-//      appendAvatar(avatar);
-      
+      //      avatar = new Avatar(0, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask);
+      //      avatar->setVelocity(15, 15);
+      //      appendAvatar(avatar);
+      //
+      //     avatar = new Avatar(100, 100, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask);
+      //      avatar->setVelocity(12, -12);
+      //      appendAvatar(avatar);
+      //
+      //      avatar = new Avatar(200, 200, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask);
+      //      avatar->setVelocity(5, -12);
+      //      appendAvatar(avatar);
+      //      avatar = new Avatar(0, 300, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
+      //       avatar->setVelocity(-12, -15);
+      //      appendAvatar(avatar);
+      //
+      //
+      //      avatar = new Avatar(0, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask);
+      //      avatar->setVelocity(35, 15);
+      //      appendAvatar(avatar);
+      //
+      //     avatar = new Avatar(100, 100, PORK_WIDTH, PORK_HEIGHT, PorkBitmap, PorkMask);
+      //      avatar->setVelocity(22, -12);
+      //      appendAvatar(avatar);
+      //
+      //      avatar = new Avatar(200, 200, DRAGON_WIDTH, DRAGON_HEIGHT, DragonBitmap, DragonMask);
+      //      avatar->setVelocity(35, -12);
+      //      appendAvatar(avatar);
+      //
+      //      avatar = new Avatar(0, 300, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
+      //       avatar->setVelocity(-22, -15);
+      //      appendAvatar(avatar);
+
       drawBackground(friedPorkHome);
       Serial.print("NumOfAvatars: ");
       Serial.println(numAvatar);
@@ -194,7 +197,7 @@ class Scene_PorkHome : public GameScene {
     }
 
   private :
-    boolean wasTouching = false;    
+    boolean wasTouching = false;
 
 };
 
