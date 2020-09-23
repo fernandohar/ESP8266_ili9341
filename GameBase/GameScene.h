@@ -28,7 +28,36 @@ class GameScene {
     void setBackground(const uint16_t* background) {
       this->background = background;
     }
+    uint16_t rgb565(float r, float g, float b){
+      uint16_t red = ceil(r / 255.0 * 31.0);
+//      Serial.println(r);
+//      Serial.println(red);
+//      Serial.println(red, BIN);
+      uint16_t green = ceil(g / 255.0 * 63.0);
+//      Serial.println(g);
+//      Serial.println(green);
+//      Serial.println(green, BIN);
+      uint16_t blue = ceil(b / 255.0 * 31.0);
+//      Serial.println(b);
+//      Serial.println(blue);
+//      Serial.println(blue, BIN);
+      byte high = 0;
+      byte low = 0;
 
+      high = red << 3;
+      //Serial.println(high, BIN);
+      high = high | green >> 3;
+      //Serial.println(high, BIN);
+      green = ceil(g / 255.0 * 63.0);
+      low = green << 5;
+      low = low | blue;
+      //Serial.println(low, BIN);
+      
+      uint16_t result = (high << 8) | low;
+//      Serial.println(result, BIN);
+//      Serial.println(0xAFE5, BIN);
+      return result;
+    }
   protected:
     TFT_eSPI *_tft;
     Avatar* avatars[MAX_AVATAR];

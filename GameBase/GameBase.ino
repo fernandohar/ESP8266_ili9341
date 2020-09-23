@@ -3,7 +3,9 @@
 #include "GameSceneManager.h"
 #include "Scene_BearHome.h"
 #include "Scene_PorkHome.h"
+#include "Scene_GameStart.h"
 #include "Bitmap_Background.h"
+
 //Shared avatar
 #include "cat.h"
 
@@ -46,16 +48,20 @@ void setup() {
   pinMode(TOUCH_IRQ, INPUT_PULLUP);
   Scene_BearHome *scene1 = new Scene_BearHome(&tft);
   Scene_PorkHome *scene2 = new Scene_PorkHome(&tft);
-  
+  Scene_GameStart *scene3 = new Scene_GameStart(&tft);
 
    //automatically change scene when first appendScene is called
 
-  
+  manager.appendScene(scene3);
+    
   manager.appendScene(scene1); 
   scene1->setBackground(whiteBearHome);
 
   manager.appendScene(scene2);
   scene2->setBackground(friedPorkHome);
+
+
+  
 }
 
 void loop() {

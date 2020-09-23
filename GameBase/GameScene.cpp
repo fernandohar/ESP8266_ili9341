@@ -148,13 +148,16 @@ void GameScene  :: renderScene() {
 
       _tft->endWrite();
       _tft->startWrite();
+     
       _tft->setAddrWindow(minx, miny, renderWidth, renderHeight);
+      
       for (int y = 0; y < renderHeight; y++) {
         destPtr =  &renderbuf[bufIdx][0];
 #ifdef DEBUG_RENDERSCENE
         Serial.print("drawBg2Buffer, y");
         Serial.println(miny + y);
 #endif
+       
         drawBg2Buffer(minx, miny + y, renderWidth, destPtr);
         //minx = position WRT BG bitmap
         //miny + y = y position WRT BG bitmap
@@ -165,24 +168,15 @@ void GameScene  :: renderScene() {
         for (int i = 0; i < toBeRenderedIndex; ++i){
            minLayerIndex = getNextRenderAvatar(minLayerIndex, toBeRendered2RenderableMap, toBeRenderedIndex);
            Avatar* toRender = renderableAvatar[minLayerIndex];
-           
-        //}
-
-//        for (int i = 0; i < toBeRenderedIndex; ++i) {
-//          int mappedIndex = toBeRendered2RenderableMap[i];
-         
-          
+  
           //renderBuf[][0] --> minx in Screen Coordinate
           //first pixel to draw should be Avatar's x (screen Coordinte)
-          //int16_t pos = toBeRendered[i]->x - minx;   //  |0    [10 (minx)    renderx (20)  --> pos of buffer = 10
           int16_t pos = toRender->x - minx;   //  |0    [10 (minx)    renderx (20)  --> pos of buffer = 10
           
           //  renderx -10   |0[0 (minx)   pos --> 0
           pos = (pos > 0) ? pos : 0;
           destPtr =  &renderbuf[bufIdx][pos]; //Move the pointer of renderBuf so that it matches avatar's position for immediate writing to
-          //int16_t bitmapY = (miny + y) - toBeRendered[i]->y;
           int16_t bitmapY = (miny + y) - toRender->y;
-//          if (bitmapY >= 0 &&  bitmapY < toBeRendered[i]->height) {
           if (bitmapY >= 0 &&  bitmapY < toRender->height) {
 #ifdef DEBUG_RENDERSCENE
             Serial.print("         drawAvatar,#[");
@@ -203,6 +197,8 @@ void GameScene  :: renderScene() {
 
         bufIdx = 1 - bufIdx; //change our renderbuffer (0, 1)
       }
+      
+      //  _tft->drawRect(minx + 1, miny + 1, renderWidth - 1 , renderHeight - 1, TFT_MAGENTA);
     }
   }
 #ifdef DEBUG_RENDERSCENE
@@ -280,14 +276,11 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y)
       }
       maskRead = true;
     } else { //x = 0
-      //if(!prefetchMask){
       maskByte = pgm_read_byte( &(avatar->mask[ y * bw + (x + bitmapoffset) / 8]));
 #ifdef DEBUG_DRAWAVATAR_1
       Serial.print(" Read Mask at Address");
       Serial.println(y * bw + (x + bitmapoffset) / 8);
 #endif
-      //}
-      //prefetchMask = false;
     }
     if (maskByte & 0x80) { //maskByte & 10000000b
       c = pgm_read_word_near(avatar->bitmap + ( y * avatar->width ) + x + bitmapoffset);
