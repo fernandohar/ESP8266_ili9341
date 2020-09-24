@@ -23,7 +23,7 @@ class Scene_BearHome : public GameScene{
       if(wasTouching){ 
          //tap up
          *needChangeScene = true;
-         *nextSceneIndex = 1;
+         *nextSceneIndex = 2;
          return;
       }
       wasTouching = false;
@@ -56,6 +56,8 @@ class Scene_BearHome : public GameScene{
   }
 
   void initScene(){
+    setBackground(whiteBearHome);
+
     wasTouching = false;
     Avatar* avatar = NULL;
     //Lowest layer ... top layer

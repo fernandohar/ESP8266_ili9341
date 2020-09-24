@@ -6,13 +6,11 @@
 #include "Scene_GameStart.h"
 #include "Bitmap_Background.h"
 
-//Shared avatar
-#include "cat.h"
 
 #include <TFT_eSPI.h>
 #include <SPI.h>
 
-#define FPS 25 //maximum FPS
+
 #define GAMESPEED 25 //Constant Game speed
 
 #define SCREENWIDTH 240
@@ -46,22 +44,16 @@ void setup() {
   uint16_t calData[5] = { 273, 3564, 475, 3430, 6 };
   tft.setTouch(calData);
   pinMode(TOUCH_IRQ, INPUT_PULLUP);
-  //Scene_BearHome *scene1 = new Scene_BearHome(&tft);
-  //Scene_PorkHome *scene2 = new Scene_PorkHome(&tft);
-  Scene_GameStart *scene3 = new Scene_GameStart(&tft);
-
+  
+  Scene_BearHome *bearHome = new Scene_BearHome(&tft);
+  Scene_PorkHome *porkHome = new Scene_PorkHome(&tft);
+  Scene_GameStart *startGame = new Scene_GameStart(&tft);
    //automatically change scene when first appendScene is called
 
-  manager.appendScene(scene3);
-    
-//  manager.appendScene(scene1); 
-//  scene1->setBackground(whiteBearHome);
-//
-//  manager.appendScene(scene2);
-//  scene2->setBackground(friedPorkHome);
+  manager.appendScene(startGame); //Scene index = 0
+  manager.appendScene(bearHome); 
+  manager.appendScene(porkHome);
 
-
-  
 }
 
 void loop() {

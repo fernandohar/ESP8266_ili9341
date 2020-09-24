@@ -45,7 +45,9 @@ class Avatar{
     float previousRenderedY = 0;
     uint16_t width  = 0;
     uint16_t height = 0;
-
+    uint16_t breathPosition = 0;
+    boolean enableBreathing = false;
+    uint16_t breathAmount = 1; //default
     Vec2 velocity;
 
     const uint16_t *bitmap;
@@ -69,7 +71,21 @@ class Avatar{
     void updatePos(){
       this->x += this->velocity.x;
       this->y += this->velocity.y;
+      if(this->enableBreathing){
+        breathCounter++;
+      }
+      if(breathCounter >= breathDuration){
+        isBreathingDown = !isBreathingDown;
+        breathCounter = 0;
+      }
     }
+
+    //this is used by renderScene function to simulate up and down motion
+    uint16_t breathDuration = 0;
+    boolean isBreathingDown = false; 
+    uint16_t breathCounter = 0;
+   private: 
+    
     
 };
 #endif

@@ -31,7 +31,7 @@ class GameScene {
     void setBackgroundColor(const uint16_t bgColor){
       this->bgColor = bgColor;
     }
-    uint16_t rgb565(float r, float g, float b){
+    static uint16_t rgb565(float r, float g, float b){
       uint16_t red = ceil(r / 255.0 * 31.0);
 //      Serial.println(r);
 //      Serial.println(red);

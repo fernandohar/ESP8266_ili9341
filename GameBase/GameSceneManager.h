@@ -1,7 +1,11 @@
 #ifndef _GAMESCENEMANAGER_H_
 #define _GAMESCENEMANAGER_H_
 
+#define UPDATES_PER_SECOND 50
+#define UPDATES_DT 1000 / UPDATES_PER_SECOND
 #define MAXSCENES 10
+//#define SHOW_STATS_ON_TFT
+#define SHOW_STATS
 #include "GameScene.h"
 #include <TFT_eSPI.h>
 
@@ -14,9 +18,6 @@ class GameSceneManager {
         changeScene(0);
       }
     }
-    unsigned long frameCount = 0;
-    unsigned long frameStart = 0;
-    unsigned long updateCount = 0;
 
     unsigned long nextUpdate = 0;
     int loop = 0;
@@ -39,17 +40,22 @@ class GameSceneManager {
           _nextSceneIndex = -1;
           return;
         }
-
-        nextUpdate += 20; //want Update speed = 50 times per second
+        nextUpdate += UPDATES_DT;
         loop++;
-
+#ifdef SHOW_STATS
         updateCount++;
+#endif
       }
       _currentScenePtr->render();
+#ifdef SHOW_STATS
       frameCount++;
 
 
       if ((millis() - frameStart) >= 1000) {
+#ifdef SHOW_STATS_ON_TFT        
+        _tft->drawString("FPS", 0, 0, 2);
+        _tft->drawNumber(frameCount, 50, 0, 2);
+#endif
         Serial.print(" FPS: ");
         Serial.print(frameCount );
         Serial.print(" UPS: ");
@@ -58,6 +64,7 @@ class GameSceneManager {
         updateCount = 0;
         frameStart = millis();
       }
+#endif
     }
 
     void changeScene(unsigned sceneIndex) {
@@ -67,7 +74,9 @@ class GameSceneManager {
       _currentSceneIndex = sceneIndex;
       _currentScenePtr = _scenes[_currentSceneIndex];
       _currentScenePtr->initScene();
+#ifdef SHOW_STATS      
       frameStart = millis();
+#endif      
     }
   private:
     unsigned long previousUpdate = 0 ;
@@ -83,6 +92,12 @@ class GameSceneManager {
     uint16_t touchY = 0;
     boolean needChangeScene = false;
     int _nextSceneIndex = -1;
+
+#ifdef SHOW_STATS
+    unsigned long frameCount = 0;
+    unsigned long frameStart = 0;
+    unsigned long updateCount = 0;
+#endif
 };
 
 #endif

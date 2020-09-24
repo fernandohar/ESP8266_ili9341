@@ -17,18 +17,18 @@ class Scene_GameStart : public GameScene{
     }else{
       if(wasTouching){ 
          //tap up
-         //*needChangeScene = true;
-         //*nextSceneIndex = 1;
+         *needChangeScene = true;
+         *nextSceneIndex = 1;
          return;
       }
       wasTouching = false;
     }
-//     for (int i = 0; i < numAvatar; ++i) {
-//        Avatar* avatar = avatars[i];
-//        if (avatar != NULL) {   
-//          avatar->updatePos();
-//        }
-//      }
+     for (int i = 0; i < numAvatar; ++i) {
+        Avatar* avatar = avatars[i];
+        if (avatar != NULL) {   
+          avatar->updatePos();
+        }
+      }
     
   }
   
@@ -45,13 +45,17 @@ class Scene_GameStart : public GameScene{
   }
 
   void initScene(){
+    setBackgroundColor(GameScene::rgb565(230, 157, 132));
     wasTouching = false;
     Avatar* avatar = NULL;
     
     //Lowest layer ... top layer
-    //avatar = new Avatar(100, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask); //100X67
-    //appendAvatar(avatar);
-    //avatar->setVelocity(0, 1);
+    avatar = new Avatar(100, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask); //100X67
+    appendAvatar(avatar);
+    avatar->enableBreathing = true;
+    avatar->breathDuration = 50;
+    avatar->breathPosition = 40;
+    avatar->breathAmount = 2;
     uint16_t color = rgb565(230, 157, 132);
     _tft->fillScreen(color);
     //drawBackground(whiteBearHome);
