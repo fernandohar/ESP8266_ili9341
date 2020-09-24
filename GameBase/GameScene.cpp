@@ -157,8 +157,12 @@ void GameScene  :: renderScene() {
         Serial.print("drawBg2Buffer, y");
         Serial.println(miny + y);
 #endif
-       
-        drawBg2Buffer(minx, miny + y, renderWidth, destPtr);
+        if(background == NULL){
+          fillBufferWithColor(renderWidth, bgColor, destPtr);
+        }else{
+          drawBg2Buffer(minx, miny + y, renderWidth, destPtr);
+        }
+          
         //minx = position WRT BG bitmap
         //miny + y = y position WRT BG bitmap
         //renderWidth = how many pixel to render
@@ -221,6 +225,11 @@ void GameScene::drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *
   for (int i = 0; i < width; ++i) {
     c = pgm_read_word_near(background + (y * SCREENWIDTH) + x + i);
     *destPtr++ = c;
+  }
+}
+void GameScene::fillBufferWithColor(uint16_t width, uint16_t color, uint16_t * destPtr){
+  for (int i = 0; i < width; ++i) {
+    *destPtr++ = color;
   }
 }
 

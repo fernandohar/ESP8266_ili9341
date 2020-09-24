@@ -28,6 +28,9 @@ class GameScene {
     void setBackground(const uint16_t* background) {
       this->background = background;
     }
+    void setBackgroundColor(const uint16_t bgColor){
+      this->bgColor = bgColor;
+    }
     uint16_t rgb565(float r, float g, float b){
       uint16_t red = ceil(r / 255.0 * 31.0);
 //      Serial.println(r);
@@ -63,8 +66,8 @@ class GameScene {
     Avatar* avatars[MAX_AVATAR];
     int numAvatar = 0;
     uint16_t renderbuf[2][SCREENWIDTH];
-    const uint16_t *background;
-
+    const uint16_t *background = NULL;
+    uint16_t bgColor;
     void drawBackground(const uint16_t* bitmap) {
       _tft->pushImage( 0, 0, SCREENWIDTH, SCREENHEIGHT, bitmap);
     }
@@ -73,6 +76,8 @@ class GameScene {
 
     void drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *destPtr);
 
+    void fillBufferWithColor(uint16_t width, uint16_t color, uint16_t * destPtr);
+    
     void drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y);
 
     //renderCharacter is depreciated, overlapping object are not rendered correctly. use renderScene() instead 
