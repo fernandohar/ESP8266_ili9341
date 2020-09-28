@@ -1,10 +1,9 @@
 #include "GameScene.h"
-#include  "Avatar.h"
+#include "Avatar.h"
 #include "GameSceneManager.h"
 #include "Scene_BearHome.h"
 #include "Scene_PorkHome.h"
 #include "Scene_GameStart.h"
-#include "Bitmap_Background.h"
 
 
 #include <TFT_eSPI.h>

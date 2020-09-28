@@ -3,7 +3,7 @@
 #include "GameScene.h"
 #include "Avatar.h"
 #include "Physics.h"
-#include "Bitmap_Background.h"
+#include "BackgroundPorkHome.h"
 #include "cat.h"
 #include "pork.h"
 #include "dragon.h"
@@ -66,15 +66,15 @@ class Scene_PorkHome : public GameScene {
         if(avatar->id == 0){
           if(stage == 0){
             if (avatar->y == 221) {
-              avatar->setVelocity(-0.2, 0);
+              //avatar->setVelocity(-0.2, 0);
               //playMusic();
               stage++;
-              avatar2->x = avatar->x - 25;
-              avatar2->y = avatar->y + 39;
+              //avatar2->x = 0;
+              //avatar2->y = avatar->y + 39;
             }
           }else if (stage == 1){
             if(boundToScreen(avatar)){
-              avatar2->setVelocity( avatar->velocity.x, avatar->velocity.y );
+              //avatar2->setVelocity( avatar->velocity.x, avatar->velocity.y );
             }
           }
         }
@@ -148,31 +148,23 @@ class Scene_PorkHome : public GameScene {
 
     void render() {
       renderScene();
-      //      for (int i = 0; i < numAvatar; ++i) {
-      //        Avatar* avatar = avatars[i];
-      //        if (avatar != NULL) {
-      //          renderCharacter(avatar->previousRenderedX, avatar->previousRenderedY, avatar->x, avatar->y, avatar->width, avatar->height, avatar->bitmap, avatar->mask, SCREENWIDTH); //temp
-      //          avatar->savePreviousRenderPos();
-      //        }
-      //      }
     }
 
     void initScene() {
-      setBackground(friedPorkHome);
+      setBackground(BackgroundPorkHome);
       wasTouching = false;
       stage = 0;
       
-      avatar1 = new Avatar(120, 320, 87, 99, Pork2, Pork2Mask);
+      avatar1 = new Avatar(97, 190, 87, 99, Pork2, Pork2Mask); //87x99 pixels
       avatar1->id = 0;
       appendAvatar(avatar1);
-      avatar1->setVelocity(0, -1);
       avatar1->enableBreathing = true;
       avatar1->breathDuration = 40;
       avatar1->breathPosition = 20;
       avatar1->breathAmount = 3;
 
       
-      avatar2 = new Avatar(241, 321, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
+      avatar2 = new Avatar(20, 229, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
       avatar2->id = 1;
       avatar2->breathDuration = 20;
       avatar2->enableBreathing = true;
@@ -180,7 +172,7 @@ class Scene_PorkHome : public GameScene {
       avatar2->breathAmount = 2;
       appendAvatar(avatar2);
       
-      drawBackground(friedPorkHome);
+      drawBackground(BackgroundPorkHome);
     }
 
     void destroyScene() {
