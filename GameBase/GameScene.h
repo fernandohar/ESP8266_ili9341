@@ -85,6 +85,8 @@ class GameScene {
                             const uint8_t imageMask[], int16_t backgroundWidth);
   private:
    int getNextRenderAvatar(int previousMin, int toBeRendered2RenderableMap[], int toBeRenderedIndex);
+   uint16_t debugColor = rgb565(230, 157, 132);
+    
 };
 
 #endif

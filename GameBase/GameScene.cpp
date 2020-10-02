@@ -3,7 +3,8 @@
 //#define DEBUG_RENDERSCENE
 //#define DEBUG_DRAWAVATAR
 void GameScene  :: renderScene() {
-
+  //_tft->fillScreen(debugColor);
+  
   Avatar *renderableAvatar[numAvatar]; //for shortlisting of avatar that will affect the screen display
   int16_t renderableMinx[numAvatar]; //for calculation of discrete drawing area
   int16_t renderableMiny[numAvatar];

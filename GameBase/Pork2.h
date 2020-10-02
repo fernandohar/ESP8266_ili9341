@@ -3,6 +3,12 @@
 // Time generated : Tue, 22 Sep 20 19:26:04 +0200  (Server timezone: CET)
 // Image Size     : 87x99 pixels
 // Memory usage   : 17226 bytes
+//Bitmap generated from http://www.rinkydinkelectronics.com/t_imageconverter565.php
+//mask generated from 
+//http://javl.github.io/image2cpp/
+//Black Background
+//Invert Color
+//253 threshold
 
 #ifndef PORK_2_H_
 #define PORK_2_H_
@@ -549,10 +555,6 @@ const unsigned short Pork2[8613] PROGMEM={
 };
 
 
-//http://javl.github.io/image2cpp/
-//Black Background
-//Invert Color
-//253 threshold
 
 // 'pork', 87x99px
 const  uint8_t Pork2Mask[] PROGMEM={

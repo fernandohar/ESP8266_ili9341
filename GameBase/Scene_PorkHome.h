@@ -10,7 +10,9 @@
 #include "shrimp.h"
 #include "pork2.h"
 #include "pitches.h"
-
+#include "cookie.h"
+#include "macaron.h"
+#include "cake.h"
 class Scene_PorkHome : public GameScene {
   public:
     Scene_PorkHome(TFT_eSPI *tft) {
@@ -47,13 +49,30 @@ class Scene_PorkHome : public GameScene {
 
  
       if (isTouching) {
+        //Check if touching on Avatar id = 2 (Left )/ 3 (Right)
+        if(!wasTouching){
+          if(touchX > avatar3->x && touchX  < avatar3->x + avatar3->width && touchY > avatar3->y && touchY < avatar3->y  + avatar3->height){
+            avatar2->setVelocity(-1, 0);
+            isTouchingButton = true;
+          }else if(touchX > avatar4->x && touchX  < avatar4->x + avatar3->width && touchY > avatar4->y && touchY < avatar4->y  + avatar4->height){
+            avatar2->setVelocity(1, 0);
+            isTouchingButton = true;
+          }
+        }
 
+        macaronAvatar->setPos(touchX, touchY);
+        
         wasTouching = true;
       } else {
         if (wasTouching) { //tap up
-          *needChangeScene = true;
-          *nextSceneIndex = 0;
-          return;
+          if(!isTouchingButton){
+//            *needChangeScene = true;
+//            *nextSceneIndex = 0;
+//            return;
+          }else{
+            avatar2->setVelocity(0, 0);
+            isTouchingButton =  false;  
+          }
         }
         wasTouching = false;
       }
@@ -73,9 +92,9 @@ class Scene_PorkHome : public GameScene {
               //avatar2->y = avatar->y + 39;
             }
           }else if (stage == 1){
-            if(boundToScreen(avatar)){
-              //avatar2->setVelocity( avatar->velocity.x, avatar->velocity.y );
-            }
+//            if(boundToScreen(avatar)){
+//              //avatar2->setVelocity( avatar->velocity.x, avatar->velocity.y );
+//            }
           }
         }
       }
@@ -171,6 +190,17 @@ class Scene_PorkHome : public GameScene {
       avatar2->breathPosition = 15;
       avatar2->breathAmount = 2;
       appendAvatar(avatar2);
+
+      avatar3 = new Avatar(20, 150, 25, 22, cake, cakeMask);
+      avatar3->id = 2;
+      appendAvatar(avatar3);
+
+      avatar4 = new Avatar(200, 150,25, 23, cookie, cookieMask);
+      avatar4->id = 3;
+      appendAvatar(avatar4); 
+
+      macaronAvatar = new Avatar( 0, 0, 25, 21, macaron, macaronMask);
+      appendAvatar(macaronAvatar);
       
       drawBackground(BackgroundPorkHome);
     }
@@ -182,9 +212,15 @@ class Scene_PorkHome : public GameScene {
 
   private :
     boolean wasTouching = false;
+    boolean isTouchingButton = false;
     int stage = 0;
     Avatar *avatar1 = NULL;
     Avatar *avatar2 = NULL;
+
+    Avatar *avatar3 = NULL; //cake
+    Avatar *avatar4 = NULL; //cookie
+
+    Avatar *macaronAvatar = NULL;//macaron
 };
 
 #endif

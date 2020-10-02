@@ -68,6 +68,10 @@ class Avatar{
       this->velocity.x = dx;
       this->velocity.y = dy;
     }
+    void setPos(float x, float y){
+      this->x = x;
+      this->y = y;
+    }
     void updatePos(){
       this->x += this->velocity.x;
       this->y += this->velocity.y;

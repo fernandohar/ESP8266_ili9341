@@ -1,16 +1,18 @@
 #ifndef _GAMESCENEMANAGER_H_
 #define _GAMESCENEMANAGER_H_
 
-#define UPDATES_PER_SECOND 50
+#define UPDATES_PER_SECOND 20
 #define UPDATES_DT 1000 / UPDATES_PER_SECOND
 #define MAXSCENES 10
 //#define SHOW_STATS_ON_TFT
 #define SHOW_STATS
 #include "GameScene.h"
 #include <TFT_eSPI.h>
+//#include <XPT2046.h>
 
 class GameSceneManager {
   public:
+//    GameSceneManager(TFT_eSPI *tft, XPT2046 *touch, uint8_t touchIrq) : _tft(tft), _touchIrq(touchIrq), _touch(touch) { };
     GameSceneManager(TFT_eSPI *tft, uint8_t touchIrq) : _tft(tft), _touchIrq(touchIrq) { };
     int appendScene(GameScene *gameScene) {
       _scenes[_totalScenes++] = gameScene;
@@ -29,6 +31,11 @@ class GameSceneManager {
         boolean isTouching = (digitalRead(_touchIrq) == LOW);
         if (isTouching) {
           _tft->getTouch(&touchX, &touchY);
+         //_touch->getPosition(touchX, touchY);
+//         Serial.print("touched");
+//         Serial.print(touchX);
+//         Serial.print(",");
+//         Serial.println(touchY);
         }
 
         _currentScenePtr->update(isTouching, touchX, touchY, &needChangeScene, &_nextSceneIndex); //Suppose we use Constant Update speed of 50 times per seconds (50 / 1000 = 20) = diration
@@ -88,6 +95,7 @@ class GameSceneManager {
     int _totalScenes = 0;
     uint8_t _touchIrq;
     TFT_eSPI *_tft;
+    //XPT2046 *_touch;
     uint16_t touchX = 0;
     uint16_t touchY = 0;
     boolean needChangeScene = false;
