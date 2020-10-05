@@ -88,6 +88,7 @@ class Avatar{
     uint16_t breathDuration = 0;
     boolean isBreathingDown = false; 
     uint16_t breathCounter = 0;
+    //virtual ~Avatar() {}
    private: 
     
     

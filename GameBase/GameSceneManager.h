@@ -37,7 +37,7 @@ class GameSceneManager {
 //         Serial.print(",");
 //         Serial.println(touchY);
         }
-
+        _currentScenePtr->playSound();
         _currentScenePtr->update(isTouching, touchX, touchY, &needChangeScene, &_nextSceneIndex); //Suppose we use Constant Update speed of 50 times per seconds (50 / 1000 = 20) = diration
 
         //Scene Control

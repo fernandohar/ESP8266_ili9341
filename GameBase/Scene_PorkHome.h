@@ -2,6 +2,7 @@
 #define _SCENE_PORKHOME_H_
 #include "GameScene.h"
 #include "Avatar.h"
+#include "Attachment.h"
 #include "Physics.h"
 #include "BackgroundPorkHome.h"
 #include "cat.h"
@@ -54,9 +55,23 @@ class Scene_PorkHome : public GameScene {
           if(touchX > avatar3->x && touchX  < avatar3->x + avatar3->width && touchY > avatar3->y && touchY < avatar3->y  + avatar3->height){
             avatar2->setVelocity(-1, 0);
             isTouchingButton = true;
+            addSound(NOTE_C4, 250);
+            addSound(0, 50);
+            addSound(NOTE_G3, 125);
+            addSound(0, 50);
+            addSound(NOTE_G3, 125);
+            addSound(0, 50);
+            addSound(NOTE_A3, 250);
+            addSound(0, 50);
+            addSound(NOTE_G3, 325);
+            addSound(0, 50);
+            addSound(NOTE_B3, 250);
+            addSound(0, 50);
+            addSound(NOTE_C4, 250);
           }else if(touchX > avatar4->x && touchX  < avatar4->x + avatar3->width && touchY > avatar4->y && touchY < avatar4->y  + avatar4->height){
             avatar2->setVelocity(1, 0);
             isTouchingButton = true;
+            playMusic();
           }
         }
 
@@ -81,22 +96,37 @@ class Scene_PorkHome : public GameScene {
       //Suppose we use Constant Game update speed
       for (int i = 0; i < numAvatar; ++i) {
         Avatar* avatar = avatars[i];
-        avatar->updatePos();
-        if(avatar->id == 0){
-          if(stage == 0){
-            if (avatar->y == 221) {
-              //avatar->setVelocity(-0.2, 0);
-              //playMusic();
-              stage++;
-              //avatar2->x = 0;
-              //avatar2->y = avatar->y + 39;
-            }
-          }else if (stage == 1){
-//            if(boundToScreen(avatar)){
-//              //avatar2->setVelocity( avatar->velocity.x, avatar->velocity.y );
-//            }
-          }
+        boundToScreen(avatar);
+//        Attachment * attPtr = dynamic_cast<Attachment*>(avatar);
+//        if(attPtr){
+//          attPtr->updatePos();
+//        }else{
+//          avatar->updatePos();
+//        }
+
+        if(avatar == macaronAvatar){  
+          macaronAvatar->updatePos();
+        }else{
+          avatar->updatePos();
         }
+
+        
+//        if(avatar->id == 0){
+//          
+//          if(stage == 0){
+//            if (avatar->y == 221) {
+//              //avatar->setVelocity(-0.2, 0);
+//              //playMusic();
+//              stage++;
+//              //avatar2->x = 0;
+//              //avatar2->y = avatar->y + 39;
+//            }
+//          }else if (stage == 1){
+////            if(boundToScreen(avatar)){
+////              //avatar2->setVelocity( avatar->velocity.x, avatar->velocity.y );
+////            }
+//          }
+//        }
       }
 
       //      for (int i = 0; i < numAvatar; ++i) {
@@ -181,7 +211,12 @@ class Scene_PorkHome : public GameScene {
       avatar1->breathDuration = 40;
       avatar1->breathPosition = 20;
       avatar1->breathAmount = 3;
+      avatar1->setVelocity(-1, 0);
 
+      //macaronAvatar = new Avatar( 0, 0, 25, 21, macaron, macaronMask);
+      //Attachment(uint16_t parentX, uint16_t parentY, Avatar *parent, uint16_t _width, uint16_t _height, const uint16_t *_bitmap, const uint8_t *_mask)
+      macaronAvatar = new Attachment(13, 47, avatar1, 25, 21, macaron, macaronMask);
+      appendAvatar(macaronAvatar); //append to Avatar list to that the renderScene function will be able to see this 
       
       avatar2 = new Avatar(20, 229, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
       avatar2->id = 1;
@@ -199,8 +234,7 @@ class Scene_PorkHome : public GameScene {
       avatar4->id = 3;
       appendAvatar(avatar4); 
 
-      macaronAvatar = new Avatar( 0, 0, 25, 21, macaron, macaronMask);
-      appendAvatar(macaronAvatar);
+      
       
       drawBackground(BackgroundPorkHome);
     }
@@ -220,7 +254,7 @@ class Scene_PorkHome : public GameScene {
     Avatar *avatar3 = NULL; //cake
     Avatar *avatar4 = NULL; //cookie
 
-    Avatar *macaronAvatar = NULL;//macaron
+    Attachment *macaronAvatar = NULL;//macaron
 };
 
 #endif
