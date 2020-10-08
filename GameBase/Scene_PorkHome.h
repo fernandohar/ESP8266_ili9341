@@ -114,6 +114,8 @@ class Scene_PorkHome : public GameScene {
         
         if(avatar == macaronAvatar){  
           macaronAvatar->updatePos(currentElapse);
+        }else if (avatar == cookieAttachment){
+          cookieAttachment->updatePos(currentElapse);
         }else{
           avatar->updatePos(currentElapse);
           boundToScreen(avatar);
@@ -202,13 +204,15 @@ class Scene_PorkHome : public GameScene {
       avatar1->enableBreathing = true;
       avatar1->breathInterval = 40;
       avatar1->breathPosition = 20;
-      avatar1->breathAmount = 3;
-      avatar1->setVelocity(-10, 0);
-      avatar1->updateInterval = 300;
-      //macaronAvatar = new Avatar( 0, 0, 25, 21, macaron, macaronMask);
-      //Attachment(uint16_t parentX, uint16_t parentY, Avatar *parent, uint16_t _width, uint16_t _height, const uint16_t *_bitmap, const uint8_t *_mask)
-      macaronAvatar = new Attachment(13, 47, avatar1, 25, 21, macaron, macaronMask);
+      avatar1->breathAmount = 4;
+      avatar1->setVelocity(-8, 0);
+      avatar1->updateInterval = 600;
+      
+      macaronAvatar = new Attachment(18, -18, avatar1, 25, 21, macaron, macaronMask);
       appendAvatar(macaronAvatar); //append to Avatar list to that the renderScene function will be able to see this 
+
+      cookieAttachment = new Attachment( 10, 80, avatar1, 25, 23, cookie, cookieMask);
+      appendAvatar(cookieAttachment);
       
       avatar2 = new Avatar(20, 229, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
       avatar2->id = 1;
@@ -217,6 +221,7 @@ class Scene_PorkHome : public GameScene {
       avatar2->breathPosition = 15;
       avatar2->breathAmount = 2;
       appendAvatar(avatar2);
+      
 
       avatar3 = new Avatar(20, 150, 25, 22, cake, cakeMask);
       avatar3->id = 2;
@@ -260,6 +265,7 @@ class Scene_PorkHome : public GameScene {
     Avatar *avatar4 = NULL; //cookie
 
     Attachment *macaronAvatar = NULL;//macaron
+    Attachment *cookieAttachment = NULL;
 };
 
 #endif
