@@ -2,7 +2,6 @@
 #define _AVATAR_H_
 
 struct Vec2{
- 
   float x;
   float y;
   
@@ -22,31 +21,22 @@ struct Vec2{
     vec.y = this->y - b.y;
     return vec;
   }
-
-  void print(){
-    Serial.print(x);
-    Serial.print(",");
-    Serial.print(y);
-  }
 };
 
-struct Circle{
-  float x;
-  float y;
-  float radius;
-};
+
 
 class Avatar{
+  friend class GameScene;
+  friend class Attachment;
   public: 
     int id = 0;
     float x = 0;
     float y = 0;
-    float previousRenderedX = 0;
-    float previousRenderedY = 0;
+
     uint16_t width  = 0;
     uint16_t height = 0;
-    uint16_t breathPosition = 0;
-    boolean enableBreathing = false;
+   
+    
     uint16_t breathAmount = 1; //default
     Vec2 velocity;
     int updateInterval = 0; //in milli seconds
@@ -72,28 +62,49 @@ class Avatar{
       this->x = x;
       this->y = y;
     }
+
+    
     void updatePos(unsigned long currentTime){
       if(currentTime >= this->nextPosUpdateTime){
         this->x += this->velocity.x;
         this->y += this->velocity.y;
         this->nextPosUpdateTime = currentTime + this->updateInterval;
       }
-      if(this->enableBreathing){
-        breathCounter++;
-      }
-      if(breathCounter >= breathInterval){
-        isBreathingDown = !isBreathingDown;
-        breathCounter = 0;
+      if(this->_enableBreathing){
+        if(currentTime >= this->breathUpdateTime){
+          isBreathingDown = !isBreathingDown;
+          this->breathUpdateTime = currentTime + this->_breathInterval;
+        }
+        
       }
     }
 
     //this is used by renderScene function to simulate up and down motion
-    uint16_t breathInterval = 0;
+    
     boolean isBreathingDown = false; 
-    uint16_t breathCounter = 0;
-    //virtual ~Avatar() {}
+
+    void setBreathInterval(uint16_t breathInterval){
+      this->_breathInterval = breathInterval;
+    }
+    void setBreathPosition(uint16_t pos){
+      this->_breathPosition = pos;
+    }
+    void enableBreathing(){
+      this->_enableBreathing = true;
+    }
+    void disableBreathing(){
+      this->_enableBreathing = false;
+    }
+    bool isBreathingEnabled(){
+      return this->_enableBreathing;
+    }
    private: 
     unsigned long nextPosUpdateTime = 0;
-    
+    unsigned long breathUpdateTime = 0;
+    float previousRenderedX = 0;
+    float previousRenderedY = 0;
+     uint16_t _breathPosition = 0;
+     boolean _enableBreathing = false;
+     uint16_t _breathInterval = 0;
 };
 #endif

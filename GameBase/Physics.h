@@ -3,6 +3,11 @@
 #include "Avatar.h"
 
 #define COLLIDE_RESITUTION 1.0
+struct Circle{
+  float x;
+  float y;
+  float radius;
+};
 class physics{
   public:
 

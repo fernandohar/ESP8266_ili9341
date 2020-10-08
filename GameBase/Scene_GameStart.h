@@ -53,9 +53,12 @@ class Scene_GameStart : public GameScene{
     //Lowest layer ... top layer
     avatar = new Avatar(100, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask); //100X67
     appendAvatar(avatar);
-    avatar->enableBreathing = true;
-    avatar->breathInterval = 50;
-    avatar->breathPosition = 40;
+    //avatar->enableBreathing = true;
+    avatar->enableBreathing();
+    //avatar->breathInterval = 50;
+    avatar->setBreathInterval(500);
+    //avatar->breathPosition = 40;
+    avatar->setBreathPosition(40);
     avatar->breathAmount = 2;
     uint16_t color = rgb565(230, 157, 132);
     _tft->fillScreen(color);

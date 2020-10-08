@@ -21,12 +21,8 @@
 
 
 TFT_eSPI tft = TFT_eSPI();
-
 GameSceneManager manager = GameSceneManager(&tft, TOUCH_IRQ);
 
-
-
-//Do not create Avatar at GameBase, it will be modified by other scenes
 
 void setup() {
   Serial.begin(115200);
@@ -37,8 +33,6 @@ void setup() {
   tft.fillScreen(ILI9341_BLACK);
   tft.setRotation(0);
   tft.setSwapBytes(true);
-
-
  
   //Setup Touch Screen Module
   uint16_t calData[5] = { 273, 3564, 475, 3430, 6 };
@@ -58,7 +52,6 @@ void setup() {
 
 void loop() {
   //Let game update at 60Hz  
-
     manager.update();
 
 }

@@ -201,12 +201,16 @@ class Scene_PorkHome : public GameScene {
       avatar1 = new Avatar(97, 190, 87, 99, Pork2, Pork2Mask); //87x99 pixels
       avatar1->id = 0;
       appendAvatar(avatar1);
-      avatar1->enableBreathing = true;
-      avatar1->breathInterval = 40;
-      avatar1->breathPosition = 20;
+      //avatar1->enableBreathing = true;
+      avatar1->enableBreathing();
+      avatar1->setBreathInterval(400);
+//      avatar1->breathInterval = 400;
+      //avatar1->breathPosition = 20;
+      avatar1->setBreathPosition(20);
       avatar1->breathAmount = 4;
       avatar1->setVelocity(-8, 0);
-      avatar1->updateInterval = 600;
+      avatar1->updateInterval = 600
+      ;
       
       macaronAvatar = new Attachment(18, -18, avatar1, 25, 21, macaron, macaronMask);
       appendAvatar(macaronAvatar); //append to Avatar list to that the renderScene function will be able to see this 
@@ -216,9 +220,12 @@ class Scene_PorkHome : public GameScene {
       
       avatar2 = new Avatar(20, 229, SHRIMP_WIDTH, SHRIMP_HEIGHT, ShrimpTailBitmap, ShrimpTailmask);
       avatar2->id = 1;
-      avatar2->breathInterval = 20;
-      avatar2->enableBreathing = true;
-      avatar2->breathPosition = 15;
+      //avatar2->breathInterval = 500;
+      //avatar2->enableBreathing = true;
+      avatar2->setBreathInterval(500);
+      avatar2->enableBreathing();
+      //avatar2->breathPosition = 15;
+      avatar2->setBreathPosition(15);
       avatar2->breathAmount = 2;
       appendAvatar(avatar2);
       

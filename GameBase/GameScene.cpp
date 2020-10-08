@@ -191,9 +191,9 @@ void GameScene  :: renderScene() {
             Serial.println(bitmapY);
 #endif
 //            drawAvatar2Buffer(toBeRendered[i], destPtr, bitmapY);
-            if(toRender->enableBreathing && toRender->isBreathingDown){
+            if(toRender->isBreathingEnabled() && toRender->isBreathingDown){
               if(bitmapY > toRender->breathAmount){
-                int16_t tempY =  (bitmapY <= toRender->height - toRender->breathPosition) ? bitmapY - toRender->breathAmount : bitmapY;
+                int16_t tempY =  (bitmapY <= toRender->height - toRender->_breathPosition) ? bitmapY - toRender->breathAmount : bitmapY;
                 drawAvatar2Buffer(toRender, destPtr, tempY);
               }
             }else{
