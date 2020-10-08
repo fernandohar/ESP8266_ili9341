@@ -23,10 +23,11 @@ class Scene_GameStart : public GameScene{
       }
       wasTouching = false;
     }
+    unsigned long current = millis();
      for (int i = 0; i < numAvatar; ++i) {
         Avatar* avatar = avatars[i];
         if (avatar != NULL) {   
-          avatar->updatePos();
+          avatar->updatePos(current);
         }
       }
     
@@ -53,7 +54,7 @@ class Scene_GameStart : public GameScene{
     avatar = new Avatar(100, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask); //100X67
     appendAvatar(avatar);
     avatar->enableBreathing = true;
-    avatar->breathDuration = 50;
+    avatar->breathInterval = 50;
     avatar->breathPosition = 40;
     avatar->breathAmount = 2;
     uint16_t color = rgb565(230, 157, 132);

@@ -15,7 +15,7 @@ class Attachment : public Avatar{
        y = parent->y + parentY; 
     };
 
-   void updatePos(){
+   void updatePos(unsigned long currentTime){
     this->x = _parent->x + _parentX;
     this->y = _parent->y + _parentY;
 //    Serial.println("updatePos of Attachment");

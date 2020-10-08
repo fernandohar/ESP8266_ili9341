@@ -8,7 +8,6 @@
 
 #include <TFT_eSPI.h>
 #include <SPI.h>
-//#include <XPT2046.h>
 
 #define GAMESPEED 25 //Constant Game speed
 
@@ -23,28 +22,24 @@
 
 TFT_eSPI tft = TFT_eSPI();
 
-//XPT2046 touch(/*cs=*/ 4, /*irq=*/ 5);
-//GameSceneManager manager = GameSceneManager(&tft, &touch, TOUCH_IRQ);
 GameSceneManager manager = GameSceneManager(&tft, TOUCH_IRQ);
 
 
 
 //Do not create Avatar at GameBase, it will be modified by other scenes
-//Avatar* avatar1 = new Avatar(0, 0, CAT_WIDTH, CAT_HEIGHT, CatBitmap, CatMask);
-
 
 void setup() {
   Serial.begin(115200);
   SPI.begin();
   SPI.setFrequency(40000000);
-  //touch.begin(tft.width(), tft.height());  // Must be done before setting rotation
+ 
   tft.begin();
   tft.fillScreen(ILI9341_BLACK);
   tft.setRotation(0);
   tft.setSwapBytes(true);
 
 
-  //touch.setCalibration(1791, 1823, 516, 285);
+ 
   //Setup Touch Screen Module
   uint16_t calData[5] = { 273, 3564, 475, 3430, 6 };
   tft.setTouch(calData);

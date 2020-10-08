@@ -49,7 +49,7 @@ class Avatar{
     boolean enableBreathing = false;
     uint16_t breathAmount = 1; //default
     Vec2 velocity;
-
+    int updateInterval = 0; //in milli seconds
     const uint16_t *bitmap;
     const uint8_t *mask;
     
@@ -72,25 +72,28 @@ class Avatar{
       this->x = x;
       this->y = y;
     }
-    void updatePos(){
-      this->x += this->velocity.x;
-      this->y += this->velocity.y;
+    void updatePos(unsigned long currentTime){
+      if(currentTime >= this->nextPosUpdateTime){
+        this->x += this->velocity.x;
+        this->y += this->velocity.y;
+        this->nextPosUpdateTime = currentTime + this->updateInterval;
+      }
       if(this->enableBreathing){
         breathCounter++;
       }
-      if(breathCounter >= breathDuration){
+      if(breathCounter >= breathInterval){
         isBreathingDown = !isBreathingDown;
         breathCounter = 0;
       }
     }
 
     //this is used by renderScene function to simulate up and down motion
-    uint16_t breathDuration = 0;
+    uint16_t breathInterval = 0;
     boolean isBreathingDown = false; 
     uint16_t breathCounter = 0;
     //virtual ~Avatar() {}
    private: 
-    
+    unsigned long nextPosUpdateTime = 0;
     
 };
 #endif

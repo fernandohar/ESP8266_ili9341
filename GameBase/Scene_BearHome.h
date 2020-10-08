@@ -28,10 +28,12 @@ class Scene_BearHome : public GameScene{
       }
       wasTouching = false;
     }
+
+    unsigned long current = millis();
      for (int i = 0; i < numAvatar; ++i) {
         Avatar* avatar = avatars[i];
         if (avatar != NULL) {   
-          avatar->updatePos();
+          avatar->updatePos(current);
         }
       }
     
