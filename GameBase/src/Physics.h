@@ -1,7 +1,7 @@
 #ifndef _PHYSICS_H_
 #define _PHYSICS_H_
 #include "Avatar.h"
-
+#include <Arduino.h>
 #define COLLIDE_RESITUTION 1.0
 struct Circle{
   float x;
@@ -61,11 +61,11 @@ class physics{
       //modify the velocity of a and b
       aPtr->velocity.x += cx;
       aPtr->velocity.y += cy;
-      bPtr->velocity.x -= cx;
-      bPtr->velocity.y -= cy;
+//      bPtr->velocity.x -= cx;
+//      bPtr->velocity.y -= cy;
 
-      aPtr->x = oldx;
-      aPtr->y = oldy;
+      //aPtr->x = oldx;
+      //aPtr->y = oldy;
     }
   }
 };
