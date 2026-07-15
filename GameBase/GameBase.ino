@@ -3,6 +3,7 @@
 #include "GameSceneManager.h"
 #include "Scene_BearHome.h"
 #include "Scene_PorkHome.h"
+#include "Scene_TotoroHome.h"
 #include "Scene_GameStart.h"
 
 
@@ -41,12 +42,14 @@ void setup() {
   
   Scene_BearHome *bearHome = new Scene_BearHome(&tft);
   Scene_PorkHome *porkHome = new Scene_PorkHome(&tft);
+  Scene_TotoroHome *totoroHome = new Scene_TotoroHome(&tft);
   Scene_GameStart *startGame = new Scene_GameStart(&tft);
    //automatically change scene when first appendScene is called
 
   //manager.appendScene(startGame); //Scene index = 0
-  //manager.appendScene(bearHome); 
-  manager.appendScene(porkHome);
+  //manager.appendScene(bearHome);
+  //manager.appendScene(porkHome);
+  manager.appendScene(totoroHome);
 
 }
 
