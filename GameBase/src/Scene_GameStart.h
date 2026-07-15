@@ -62,6 +62,7 @@ class Scene_GameStart : public GameScene {
         //how much we moved the screen
         int16_t delta = currentBgOffset - originalX;
         moveAllCharacters(delta);
+        requestRender();
       }
     }
     void moveSceneRight(uint16_t amount ) {
@@ -76,7 +77,8 @@ class Scene_GameStart : public GameScene {
         //drawBackground(game_bg2, currentBgOffset);
         //how much we moved the screen
         int16_t delta = currentBgOffset - originalX;
-        moveAllCharacters(delta);      
+        moveAllCharacters(delta);
+        requestRender();
       }
     }
     
@@ -93,7 +95,6 @@ class Scene_GameStart : public GameScene {
           uint16_t touchX = 0;
           uint16_t touchY = 0;
           getTouchPoint(&touchX, &touchY);
-          Serial.printf("touchX: %d, touchY: %d\n", touchX, touchY);
           if (cakeAvatar->contains(touchX, touchY)) {
             cakePressed = true;
             moveSceneLeft(10);
@@ -101,41 +102,54 @@ class Scene_GameStart : public GameScene {
             cookiePressed = true;
             moveSceneRight(10);
           } else if (cinnamoroll != NULL && cinnamoroll->contains(touchX, touchY)){
-            addSound(NOTE_D5, 8);
-            addSound(NOTE_D6, 8);
-            addSound(NOTE_D7, 8);
-            addSound(NOTE_D8, 8);
+            addSound(NOTE_D5, noteDurationMs(16, 800));
+            addSound(NOTE_D6, noteDurationMs(16, 800));
+            addSound(NOTE_D7, noteDurationMs(16, 800));
+            addSound(NOTE_D8, noteDurationMs(16, 800));
             cinnamorollPressed = true;
-
-            //Find the Relative press point of the avatar
-            
+            cinnamoroll->setVelocity(0, 0);
+            cinnamorollGrabOffsetX = (float)touchX - cinnamoroll->x;
+            cinnamorollGrabOffsetY = (float)touchY - cinnamoroll->y;
           } else if (chiffon != NULL && chiffon->contains(touchX, touchY)) {
-            addSound(NOTE_C5, 8);
-            addSound(NOTE_C6, 8);
-            addSound(NOTE_C7, 8);
-            addSound(NOTE_C8, 8);
+            addSound(NOTE_C5, noteDurationMs(16, 600));
+            addSound(NOTE_C6, noteDurationMs(16, 600));
+            addSound(NOTE_C7, noteDurationMs(16, 600));
+            addSound(NOTE_C8, noteDurationMs(16, 600));
             chiffonPressed = true;
+            chiffon->setVelocity(0, 0);
+            chiffonGrabOffsetX = (float)touchX - chiffon->x;
+            chiffonGrabOffsetY = (float)touchY - chiffon->y;
           }
         } else {
           //touch is holding down
-          if ((millis() - touchTimer) > 100) {
-            touchTimer = millis();
-            
-            if (cinnamorollPressed || chiffonPressed ) {
-              uint16_t touchX = 0;
-              uint16_t touchY = 0;
-              if (!getTouchPoint(&touchX, &touchY)) { return; }
+          if (cinnamorollPressed || chiffonPressed) {
+            uint16_t touchX = 0;
+            uint16_t touchY = 0;
+            if (!getTouchPoint(&touchX, &touchY)) { return; }
 
-              // Possible hardware error? some times touch returns 0, 0
-              if (touchX == 0 && touchY == 0){ return; }
-              
-              if (cinnamorollPressed) {
-                cinnamoroll->setPos((float)touchX - 20.0, (float)touchY - 20.0);
-              }
-              if (chiffonPressed) {
-                chiffon->setPos((float)touchX - 20.0, (float)touchY - 20.0);
+            // Possible hardware error? some times touch returns 0, 0
+            if (touchX == 0 && touchY == 0){ return; }
+
+            if (cinnamorollPressed) {
+              float newX = (float)touchX - cinnamorollGrabOffsetX;
+              float newY = (float)touchY - cinnamorollGrabOffsetY;
+              if (newX != cinnamoroll->x || newY != cinnamoroll->y) {
+                cinnamoroll->setPos(newX, newY);
+                requestRender();
               }
             }
+            if (chiffonPressed) {
+              float newX = (float)touchX - chiffonGrabOffsetX;
+              float newY = (float)touchY - chiffonGrabOffsetY;
+              if (newX != chiffon->x || newY != chiffon->y) {
+                chiffon->setPos(newX, newY);
+                requestRender();
+              }
+            }
+          }
+          if ((millis() - touchTimer) > 100) {
+            touchTimer = millis();
+
             if (cakePressed) {
               moveSceneLeft(5);
             } else if (cookiePressed) {
@@ -154,15 +168,11 @@ class Scene_GameStart : public GameScene {
             //moveSceneRight(50);
             //enableDebug();
           } else if (cinnamorollPressed) {
-            //addSound(NOTE_G6, 8);
-            //Simulate disappear of start button
-            //uint16_t color = rgb565(230, 157, 132);
-            //_tft->fillScreen(color);
-            //changeScene();
-            
-            
+            markAvatarsUnder(cinnamoroll);
+            requestRender();
           } else if (chiffonPressed) {
-            //drawBackground(game_bg2, 136);
+            markAvatarsUnder(chiffon);
+            requestRender();
           }
         }
         cakePressed = false;
@@ -196,9 +206,9 @@ class Scene_GameStart : public GameScene {
       // the first time all avatars grounded, show start button
       if (avatarAppeared && !allAvatarsPositionFixed) {
         allAvatarsPositionFixed = true;
-        addSound(NOTE_C4, 20); //Middle C
-        addSound(NOTE_C5, 20);
-        addSound(REST, 1000);
+        addSound(NOTE_C4, noteDurationMs(4));
+        //addSound(NOTE_C5, noteDurationMs(4));
+        addSound(REST, noteDurationMs(1));
       }
       if (changeSceneTimer > 0 && millis() > changeSceneTimer) {
         //tap up
@@ -211,11 +221,11 @@ class Scene_GameStart : public GameScene {
     void render() {
       if (refreshBackground) {
         refreshBackground = false;
-        drawBackground(game_bg2, currentBgOffset);
+        // One full-screen pass (background + avatars). Avoids drawBackground + renderScene.
+        renderFullScreen();
+        return;
       }
       renderScene();
-//        renderScene(refreshBackground);
-        refreshBackground = false;
     }
 
     void initScene() {
@@ -258,9 +268,8 @@ class Scene_GameStart : public GameScene {
     void addMelody() {
       int notes = sizeof(melody) / sizeof(melody[0]) / 2;
       int tempo = 160;
-      int wholenote = (60000 * 4) / tempo;
       for (int thisNote = 0; thisNote < notes * 2; thisNote = thisNote + 2) {
-        addSound(melody[thisNote], wholenote / melody[thisNote + 1]);
+        addSound(melody[thisNote], noteDurationMs(melody[thisNote + 1], tempo));
       }
     }
   private :
@@ -287,6 +296,10 @@ class Scene_GameStart : public GameScene {
     Avatar* cinnamoroll = NULL;
     Avatar* cakeAvatar = NULL;
     Avatar* cookieAvatar = NULL;
+    float cinnamorollGrabOffsetX = 0;
+    float cinnamorollGrabOffsetY = 0;
+    float chiffonGrabOffsetX = 0;
+    float chiffonGrabOffsetY = 0;
     uint16_t currentBgOffset = 136;  //Default Startup position of the background = 136
 //    void drawStartBtn() {
 //      char* startBtnText = "START";

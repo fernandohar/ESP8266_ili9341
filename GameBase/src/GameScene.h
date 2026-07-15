@@ -4,12 +4,12 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include "Avatar.h"
+#include "SoundPlayer.h"
 #include "pitches.h"
 #define MAX_AVATAR 50
 #define SCREENWIDTH 240
 #define SCREENHEIGHT 320
 #define SPEAKER_PIN 16 //D0 - GPIO16
-#define MAX_SOUND_TONE_SIZE 200 //the maximum number of notes in the sound
 class GameScene {
   public:
     virtual void update(boolean isTouching, boolean* needChangeScene, int* nextSceneIndex) = 0;  //function to update Game logic
@@ -39,9 +39,23 @@ class GameScene {
     }
 
     
-    // SOUND 
+    // SOUND
     void addSound(int soundTone, int soundDuration);
-    void playSound();
+    void requestRender() { _renderRequested = true; }
+    bool consumeRenderRequest() {
+      if (!_renderRequested) {
+        return false;
+      }
+      _renderRequested = false;
+      return true;
+    }
+    // noteDivisor: 1=whole, 2=half, 4=quarter, 8=eighth, 16=sixteenth, etc.
+    static int noteDurationMs(int noteDivisor, int tempoBpm = 160) {
+      if (noteDivisor <= 0) {
+        return 0;
+      }
+      return (60000 * 4) / tempoBpm / noteDivisor;
+    }
     
 
     boolean boundToScreen(Avatar* avatar) {
@@ -83,15 +97,7 @@ class GameScene {
     uint32_t backgroundWidth;
     uint16_t backgroundXOffset;
     uint16_t bgColor;
-
-    // notes in the melody:
-    int soundToneArr[MAX_SOUND_TONE_SIZE];  // = { NOTE_C4, NOTE_G3, NOTE_G3, NOTE_A3, NOTE_G3, 0, NOTE_B3, NOTE_C4 };
-    int soundDurationArr[MAX_SOUND_TONE_SIZE]; //milliseconds
-    int soundCount = 0;
-    int soundCountHead = 0;
-    int soundCountTail = 0;
-    boolean playingSound = false;
-    unsigned long soundStop = 0;
+    boolean _renderRequested = false;
 
     void drawBackground(const uint16_t* bitmap) {
       _tft->pushImage( 0, 0, SCREENWIDTH, SCREENHEIGHT, bitmap);
@@ -103,17 +109,24 @@ class GameScene {
     
     void renderScene() ;
     void renderScene(boolean refreshBackground);
+    void renderFullScreen();
+    void markAvatarsUnder(Avatar* mover);
     void drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *destPtr);
     
     void fillBufferWithColor(uint16_t width, uint16_t color, uint16_t * destPtr);
 
-    void drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y);
+    void drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y, uint16_t maxWidth, uint16_t srcStartX = 0);
     
     boolean isDebugEnabled = false;
     void enableDebug() { isDebugEnabled = true; }
     void disableDebug() {isDebugEnabled = false; }
   private:
     int getNextRenderAvatar(int previousMin, int toBeRendered2RenderableMap[], int toBeRenderedIndex);
+    int collectRowRedrawSpans(int16_t screenY, int16_t clipMinx, int16_t clipMaxx,
+                              int16_t unionDirtyMinx, int16_t unionDirtyMaxx,
+                              int16_t unionDirtyMiny, int16_t unionDirtyMaxy,
+                              Avatar** shortlist, const bool* fullRedraw, int shortlistCount,
+                              int16_t* spanStarts, int16_t* spanEnds, int maxSpans);
     uint16_t debugColor = rgb565(230, 157, 132);
 
 };

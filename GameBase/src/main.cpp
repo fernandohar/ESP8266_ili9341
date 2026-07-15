@@ -10,6 +10,7 @@
 #include "Avatar.h"
 #include "GameScene.h"
 #include "GameSceneManager.h"
+#include "SoundPlayer.h"
 #include "Scene_GameStart.h"
 #include "Scene_PorkHome.h"
 
@@ -90,6 +91,8 @@ void setup() {
   uint16_t calData[5] = { 316, 3563, 424, 3491, 6 };
   tft.setTouch(calData);
   pinMode(TOUCH_IRQ, INPUT_PULLUP);
+
+  SoundPlayer::begin(SPEAKER_PIN);
 
   Scene_GameStart *startGame = new Scene_GameStart(&tft);
   manager.appendScene(startGame); // Scene index = 0

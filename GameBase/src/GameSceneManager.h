@@ -9,6 +9,7 @@
 //#define DEBUG_SCENEMANAGER
 #include <Arduino.h>
 #include "GameScene.h"
+#include "SoundPlayer.h"
 #include <TFT_eSPI.h>
 
 class GameSceneManager {
@@ -42,7 +43,9 @@ class GameSceneManager {
         
         boolean isTouching = (_touchReader != NULL) ? _touchReader() : (digitalRead(_touchIrq) == LOW);
 
-        _currentScenePtr->playSound();
+#if !defined(ARDUINO_ARCH_ESP32)
+        SoundPlayer::update();
+#endif
         _currentScenePtr->update(isTouching, &needChangeScene, &_nextSceneIndex); //Suppose we use Constant Update speed of 50 times per seconds (50 / 1000 = 20) = diration
         nextUpdate += UPDATES_DT;
         loop++;
@@ -53,9 +56,10 @@ class GameSceneManager {
       }
 
       current = millis();
-      if (current > nextRender ) {
+      bool urgentRender = _currentScenePtr->consumeRenderRequest();
+      if (urgentRender || current > nextRender) {
         _currentScenePtr->render();
-        nextRender = current + 50;
+        nextRender = current + (urgentRender ? 33 : 50);
       }
 
       

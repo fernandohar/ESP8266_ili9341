@@ -1,4 +1,5 @@
 #include "GameScene.h"
+#include "SoundPlayer.h"
 
 #define min(X, Y) (((X)<(Y))?(X):(Y))
 #define DEBUG
@@ -93,9 +94,67 @@ void GameScene :: drawBackground(const uint16_t* bitmap, uint16_t imageWidth, ui
         *destPtr++ = pgm_read_word_near(pos + background);
       }
     }
+
     isDebugEnabled = false;
     _tft->pushPixels(&renderbuf[bufIdx][0], SCREENWIDTH);
     bufIdx = 1 - bufIdx; //alternate our renderbuffer (0, 1)
+  }
+}
+
+void GameScene :: renderFullScreen() {
+  Avatar* layerAvatars[MAX_AVATAR];
+  int numLayers = 0;
+  unsigned long frameTime = millis();
+
+  for (int i = 0; i < numAvatar; ++i) {
+    Avatar* avatar = avatars[i];
+    if (avatar == NULL) {
+      continue;
+    }
+    if (avatar->x + avatar->width < 0 || avatar->x >= SCREENWIDTH ||
+        avatar->y + avatar->height < 0 || avatar->y >= SCREENHEIGHT) {
+      continue;
+    }
+    if (avatar->numOfFrames > 1) {
+      avatar->updateFrameIndex(frameTime);
+    }
+    layerAvatars[numLayers++] = avatar;
+  }
+
+  int8_t bufIdx = 0;
+  _tft->endWrite();
+  _tft->startWrite();
+  _tft->setAddrWindow(0, 0, SCREENWIDTH, SCREENHEIGHT);
+
+  for (uint16_t y = 0; y < SCREENHEIGHT; y++) {
+    uint16_t *destPtr = &renderbuf[bufIdx][0];
+    drawBg2Buffer(0, y, SCREENWIDTH, destPtr);
+
+    for (int k = 0; k < numLayers; ++k) {
+      Avatar* toRender = layerAvatars[k];
+      int16_t bitmapY = y - toRender->y;
+      if (bitmapY < 0 || bitmapY >= toRender->height) {
+        continue;
+      }
+      int16_t startX = (toRender->x < 0) ? 0 : (int16_t)toRender->x;
+      int16_t endX = (int16_t)(toRender->x + toRender->width);
+      if (endX > SCREENWIDTH) {
+        endX = SCREENWIDTH;
+      }
+      if (endX > startX) {
+        destPtr = &renderbuf[bufIdx][startX];
+        drawAvatar2Buffer(toRender, destPtr, bitmapY, (uint16_t)(endX - startX));
+      }
+    }
+
+    _tft->pushPixels(&renderbuf[bufIdx][0], SCREENWIDTH);
+    bufIdx = 1 - bufIdx;
+  }
+
+  _tft->endWrite();
+
+  for (int i = 0; i < numLayers; ++i) {
+    layerAvatars[i]->savePreviousRenderPos();
   }
 }
 
@@ -123,51 +182,55 @@ void GameScene::fillBufferWithColor(uint16_t width, uint16_t color, uint16_t * d
   }
 }
 
-void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y) {
-  avatar->updateFrameIndex(millis());
+void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y, uint16_t maxWidth, uint16_t srcStartX) {
+  if (maxWidth == 0) {
+    return;
+  }
 
-  uint16_t renderwidth = (avatar->x < 0) ? (avatar->width + avatar->x) : avatar->width; //note the sign of x is -'ve in first condition.
-  uint16_t c;
-  int16_t bw = (avatar->width + 7) / 8; //number of bytes for each row of mask
+  uint16_t renderwidth = maxWidth;
+  int16_t bw = (avatar->width + 7) / 8;
+  uint16_t bitmapoffset = srcStartX;
 
   boolean maskRead = true;
   uint16_t maskoffset = 0;
-  uint16_t bitmapoffset = 0;
-  uint8_t maskByte = 0; //variable to hold the Byte read from mask;
-  if (avatar->x < 0) {
-    
-    maskRead  = false;
-    
+  uint8_t maskByte = 0;
+
+  if (srcStartX == 0 && avatar->x < 0) {
+    renderwidth = (avatar->width + avatar->x);
+    if (renderwidth > maxWidth) {
+      renderwidth = maxWidth;
+    }
+    if (renderwidth == 0) {
+      return;
+    }
+
+    maskRead = false;
+    bitmapoffset = (uint16_t)abs(avatar->x);
     const uint8_t* mask = avatar->getMask();
-
-    //For every 8 pixels the avatar X is negative, the mask need to be shifted 1 byte to the left
-    bitmapoffset = abs(avatar->x);
-
-    // (bw * y) -->  Mask Width * row
-    // bitmapoffset --> the number of pixels the avater is to the Left of the screen.
-    // divide by 8, since each byte in the mask corresponds to 8 pixels
-    // Not that the divided value is "too small" i.e.  when avatar is 10 pixel Left of the screen
-    // we really wish to shift the mask by 1Byte and 2 bit. divide by 8 will produce 1 (1 byte)
-    // then get the 2 bit from % 8
-    maskByte = pgm_read_byte(&(mask[ bw * y +  bitmapoffset / 8  ]));
-
-    maskoffset = uint16_t(abs(avatar->x)) % 8; //for image falls less than 0 in x axis, ad
+    maskByte = pgm_read_byte(&(mask[bw * y + bitmapoffset / 8]));
+    maskoffset = (uint16_t)abs(avatar->x) % 8;
+    maskByte <<= maskoffset;
+  } else if (srcStartX > 0) {
+    maskRead = false;
+    const uint8_t* mask = avatar->getMask();
+    maskByte = pgm_read_byte(&(mask[bw * y + srcStartX / 8]));
+    maskoffset = srcStartX % 8;
     maskByte <<= maskoffset;
   }
 
-  for (uint16_t x = 0 ; x < renderwidth; x++) {
-    if ((x + bitmapoffset) & 7) {   //for x = 1 ... 7, (x & 7) is true
+  for (uint16_t x = 0; x < renderwidth; x++) {
+    if ((x + bitmapoffset) & 7) {
       if (maskRead) {
         maskByte <<= 1;
       }
       maskRead = true;
-    } else { //x = 0
+    } else {
       const uint8_t* mask = avatar->getMask();
-      maskByte = pgm_read_byte( &(mask[ y * bw + (x + bitmapoffset) / 8]));      
+      maskByte = pgm_read_byte(&(mask[y * bw + (x + bitmapoffset) / 8]));
     }
-    if (maskByte & 0x80) { //maskByte & 0b10000000
+    if (maskByte & 0x80) {
       const uint16_t* bitmap = avatar->getBitmap();
-       c = pgm_read_word_near(bitmap + ( y * avatar->width ) + x + bitmapoffset);
+      uint16_t c = pgm_read_word_near(bitmap + (y * avatar->width) + x + bitmapoffset);
       *destPtr++ = c;
     } else {
       *destPtr++;
@@ -180,6 +243,7 @@ void GameScene :: renderScene() {
 }
 void GameScene  :: renderScene(boolean refreshBackground) {
   Avatar *renderableAvatar[numAvatar]; //for shortlisting of avatar that will affect the screen display
+  bool renderableFullRedraw[numAvatar];
   int16_t renderableMinx[numAvatar]; //for calculation of discrete drawing area
   int16_t renderableMiny[numAvatar];
   int16_t renderableMaxx[numAvatar];
@@ -187,21 +251,105 @@ void GameScene  :: renderScene(boolean refreshBackground) {
   const uint16_t RENDERABLEWIDTH = SCREENWIDTH - 1;
   const uint16_t RENDERABLEHEIGHT = SCREENHEIGHT - 1;
   int numRenderableAvatar = 0;
+  bool anyPositionChange = false;
+  int16_t unionDirtyMinx = SCREENWIDTH;
+  int16_t unionDirtyMiny = SCREENHEIGHT;
+  int16_t unionDirtyMaxx = -1;
+  int16_t unionDirtyMaxy = -1;
 
-  //Step1: Find all Avatars that Was & Will be on the Screen
-  for (int i  = 0; i < numAvatar;  ++i) {
+  // Pass 1: find movement and the combined dirty area from position changes.
+  for (int i = 0; i < numAvatar; ++i) {
     Avatar *avatar = avatars[i];
-    //avatar->previousRenderedX, avatar->previousRenderedY, avatar->x, avatar->y, avatar->width, avatar->height, avatar->bitmap, avatar->mask, SCREENWIDTH
     float oldX = avatar->previousRenderedX;
     float oldY = avatar->previousRenderedY;
     float newX = avatar->x;
     float newY = avatar->y;
 
-    float avatarMinx = (oldX < newX) ? oldX : newX; 
-    float avatarMiny = (oldY < newY) ? oldY : newY; 
-    float avatarMaxx = ((oldX < newX) ? newX : oldX) + avatar->width - 1;  
-    float avatarMaxy = ((oldY < newY) ? newY : oldY) + avatar->height - 1;
-    avatar->savePreviousRenderPos();
+    if (oldX == newX && oldY == newY) {
+      continue;
+    }
+
+    anyPositionChange = true;
+    int16_t dirtyMinx = (int16_t)((oldX < newX) ? oldX : newX);
+    int16_t dirtyMiny = (int16_t)((oldY < newY) ? oldY : newY);
+    int16_t dirtyMaxx = (int16_t)(((oldX < newX) ? newX : oldX) + avatar->width - 1);
+    int16_t dirtyMaxy = (int16_t)(((oldY < newY) ? newY : oldY) + avatar->height - 1);
+
+    if (dirtyMinx < unionDirtyMinx) {
+      unionDirtyMinx = dirtyMinx;
+    }
+    if (dirtyMiny < unionDirtyMiny) {
+      unionDirtyMiny = dirtyMiny;
+    }
+    if (dirtyMaxx > unionDirtyMaxx) {
+      unionDirtyMaxx = dirtyMaxx;
+    }
+    if (dirtyMaxy > unionDirtyMaxy) {
+      unionDirtyMaxy = dirtyMaxy;
+    }
+  }
+
+  //Step1: Find all Avatars that need redraw (moved, animated, or under a mover's path)
+  unsigned long frameTime = millis();
+  for (int i  = 0; i < numAvatar;  ++i) {
+    Avatar *avatar = avatars[i];
+    float oldX = avatar->previousRenderedX;
+    float oldY = avatar->previousRenderedY;
+    float newX = avatar->x;
+    float newY = avatar->y;
+
+    byte frameBefore = avatar->currentFrame;
+    if (avatar->numOfFrames > 1) {
+      avatar->updateFrameIndex(frameTime);
+    }
+    bool frameChanged = avatar->numOfFrames > 1 && avatar->currentFrame != frameBefore;
+    bool positionChanged = (oldX != newX || oldY != newY);
+    int16_t avatarMinx;
+    int16_t avatarMiny;
+    int16_t avatarMaxx;
+    int16_t avatarMaxy;
+
+    if (positionChanged || frameChanged) {
+      renderableFullRedraw[numRenderableAvatar] = true;
+      avatarMinx = (int16_t)((oldX < newX) ? oldX : newX);
+      avatarMiny = (int16_t)((oldY < newY) ? oldY : newY);
+      avatarMaxx = (int16_t)(((oldX < newX) ? newX : oldX) + avatar->width - 1);
+      avatarMaxy = (int16_t)(((oldY < newY) ? newY : oldY) + avatar->height - 1);
+    } else if (anyPositionChange) {
+      renderableFullRedraw[numRenderableAvatar] = false;
+      avatarMinx = (int16_t)newX;
+      avatarMiny = (int16_t)newY;
+      avatarMaxx = (int16_t)(newX + avatar->width - 1);
+      avatarMaxy = (int16_t)(newY + avatar->height - 1);
+
+      if (avatarMaxx < unionDirtyMinx || avatarMinx > unionDirtyMaxx ||
+          avatarMaxy < unionDirtyMiny || avatarMiny > unionDirtyMaxy) {
+        continue;
+      }
+
+      if (avatarMinx < unionDirtyMinx) {
+        avatarMinx = unionDirtyMinx;
+      }
+      if (avatarMiny < unionDirtyMiny) {
+        avatarMiny = unionDirtyMiny;
+      }
+      if (avatarMaxx > unionDirtyMaxx) {
+        avatarMaxx = unionDirtyMaxx;
+      }
+      if (avatarMaxy > unionDirtyMaxy) {
+        avatarMaxy = unionDirtyMaxy;
+      }
+      avatar->renderTainted = true;
+    } else if (avatar->renderTainted) {
+      // One more full repair pass after the mover has left.
+      renderableFullRedraw[numRenderableAvatar] = true;
+      avatarMinx = (int16_t)newX;
+      avatarMiny = (int16_t)newY;
+      avatarMaxx = (int16_t)(newX + avatar->width - 1);
+      avatarMaxy = (int16_t)(newY + avatar->height - 1);
+    } else {
+      continue;
+    }
 
     //find a shortlist of avatar to render. Only render those that falls on the screen either in previous screen or current screen
     if (avatarMinx > RENDERABLEWIDTH || avatarMaxx < 0 || avatarMiny > RENDERABLEHEIGHT || avatarMaxy < 0) { 
@@ -220,7 +368,7 @@ void GameScene  :: renderScene(boolean refreshBackground) {
 
   if (refreshBackground) {
     Serial.println("RefreshBackground implementation not completed");
-  } else {
+  } else if (numRenderableAvatar > 0) {
      //Step 2: Find a list of Discrete drawing area
     bool rendered[numRenderableAvatar]; //keep track of which avatar has been rendered
     for (int i = 0 ; i < numRenderableAvatar; ++i) {
@@ -232,14 +380,9 @@ void GameScene  :: renderScene(boolean refreshBackground) {
     Avatar* toBeRendered[numRenderableAvatar]; 
     int toBeRendered2RenderableMap[numRenderableAvatar];
     int toBeRenderedIndex;
-    
-    //keep track of the bound of the Avatar Overlapping render area
-    //This is used for refreshing background that are not covered by Avatarsß
-    uint16_t renderAreaMinX[numRenderableAvatar]; 
-    uint16_t renderAreaMinY[numRenderableAvatar];
-    uint16_t renderAreaMaxX[numRenderableAvatar];
-    uint16_t renderAreaMaxY[numRenderableAvatar];
-    uint16_t renderAreaIndex = 0;
+
+    _tft->endWrite();
+    _tft->startWrite();
 
     //Get Discrete render area with Avatar overlapping inside
     for (int i = 0; i < numRenderableAvatar; ++i) {
@@ -300,72 +443,257 @@ void GameScene  :: renderScene(boolean refreshBackground) {
           maxy = (maxy > RENDERABLEHEIGHT) ? RENDERABLEHEIGHT : maxy;
           uint16_t renderWidth = maxx - minx + 1;
           uint16_t renderHeight = maxy - miny + 1;
-//      
+
+          Avatar* clusterLayers[MAX_AVATAR];
+          int numClusterLayers = 0;
+          Avatar* clusterShortlist[MAX_AVATAR];
+          bool clusterFullRedraw[MAX_AVATAR];
+          int numClusterShortlist = 0;
+          for (int k = 0; k < numAvatar; ++k) {
+            Avatar* toRender = avatars[k];
+            if (toRender == NULL) {
+              continue;
+            }
+            int16_t avatarMinX = (int16_t)toRender->x;
+            int16_t avatarMinY = (int16_t)toRender->y;
+            int16_t avatarMaxX = (int16_t)(toRender->x + toRender->width - 1);
+            int16_t avatarMaxY = (int16_t)(toRender->y + toRender->height - 1);
+            if (avatarMaxX < minx || avatarMinX > maxx ||
+                avatarMaxY < miny || avatarMinY > maxy) {
+              continue;
+            }
+            clusterLayers[numClusterLayers++] = toRender;
+          }
+          for (int k = 0; k < numRenderableAvatar; ++k) {
+            if (renderableMaxx[k] < minx || renderableMinx[k] > maxx ||
+                renderableMaxy[k] < miny || renderableMiny[k] > maxy) {
+              continue;
+            }
+            clusterShortlist[numClusterShortlist] = renderableAvatar[k];
+            clusterFullRedraw[numClusterShortlist] = renderableFullRedraw[k];
+            numClusterShortlist++;
+          }
+
+          int16_t spanStarts[16];
+          int16_t spanEnds[16];
           uint16_t *destPtr;
           int8_t bufIdx = 0;
-//      
-          _tft->endWrite();
-          _tft->startWrite();
-    
-          _tft->setAddrWindow(minx, miny, renderWidth, renderHeight);
-//      
-          for (int y = 0; y < renderHeight; y++) {
-            destPtr =  &renderbuf[bufIdx][0];
-//              if (background == NULL) {
-//                fillBufferWithColor(renderWidth, bgColor, destPtr);
-//              } else {
-            drawBg2Buffer(minx, miny + y, renderWidth, destPtr);
-//              }
-//      
-//              //minx = position WRT BG bitmap
-//              //miny + y = y position WRT BG bitmap
-//              //renderWidth = how many pixel to render
-//              //destPtr = Buffer's pointer
-//      
-            for (int k = 0; k < numRenderableAvatar; ++k) {
-              Avatar* toRender = renderableAvatar[k];
 
-              if (renderableMaxx[k] < minx || renderableMinx[k] > maxx ||
-                  renderableMaxy[k] < miny || renderableMiny[k] > maxy) {
-                continue;
-              }
-    
-              //renderBuf[][0] --> minx in Screen Coordinate
-              //first pixel to draw should be Avatar's x (screen Coordinte)
-              int16_t pos = toRender->x - minx;   //  |0    [10 (minx)    renderx (20)  --> pos of buffer = 10
-    
-              //  renderx -10   |0[0 (minx)   pos --> 0
-              pos = (pos > 0) ? pos : 0;
-              destPtr =  &renderbuf[bufIdx][pos]; //Move the pointer of renderBuf so that it matches avatar's position for immediate writing to
-              int16_t bitmapY = (miny + y) - toRender->y;
-              if (bitmapY >= 0 &&  bitmapY < toRender->height) {
-//                  if (toRender->isBreathingEnabled() && toRender->isBreathingDown) {
-//                    if (bitmapY > toRender->breathAmount) {
-//                      int16_t tempY =  (bitmapY <= toRender->height - toRender->_breathPosition) ? bitmapY - toRender->breathAmount : bitmapY;
-//                      drawAvatar2Buffer(toRender, destPtr, tempY);
-//                    }
-//                  } else {
-                  drawAvatar2Buffer(toRender, destPtr, bitmapY);
-//                  }
-              }
+          for (int y = 0; y < renderHeight; y++) {
+            int16_t screenY = miny + y;
+            int numSpans = collectRowRedrawSpans(screenY, minx, maxx,
+                                                 unionDirtyMinx, unionDirtyMaxx,
+                                                 unionDirtyMiny, unionDirtyMaxy,
+                                                 clusterShortlist, clusterFullRedraw,
+                                                 numClusterShortlist,
+                                                 spanStarts, spanEnds, 16);
+            if (numSpans == 0) {
+              continue;
             }
-//      
-//              //Finished drawing to Buffer, flush buffer to TFT
-            _tft->pushPixels(&renderbuf[bufIdx][0], min(renderWidth, SCREENWIDTH) );
-//
-            bufIdx = 1 - bufIdx; //change our renderbuffer (0, 1)
+
+            for (int s = 0; s < numSpans; ++s) {
+              int16_t spanMinx = spanStarts[s];
+              int16_t spanMaxx = spanEnds[s];
+              uint16_t spanWidth = (uint16_t)(spanMaxx - spanMinx + 1);
+
+              _tft->setAddrWindow(spanMinx, screenY, spanWidth, 1);
+              destPtr = &renderbuf[bufIdx][0];
+              drawBg2Buffer((uint16_t)spanMinx, (uint16_t)screenY, spanWidth, destPtr);
+
+              for (int k = 0; k < numClusterLayers; ++k) {
+                Avatar* toRender = clusterLayers[k];
+                int16_t avatarMinX = (int16_t)toRender->x;
+                int16_t avatarMaxX = (int16_t)(toRender->x + toRender->width - 1);
+                if (avatarMaxX < spanMinx || avatarMinX > spanMaxx) {
+                  continue;
+                }
+
+                int16_t overlapStart = spanMinx > avatarMinX ? spanMinx : avatarMinX;
+                int16_t overlapEnd = spanMaxx < avatarMaxX ? spanMaxx : avatarMaxX;
+                uint16_t bufPos = (uint16_t)(overlapStart - spanMinx);
+                uint16_t srcStartX = (uint16_t)(overlapStart - avatarMinX);
+                uint16_t drawWidth = (uint16_t)(overlapEnd - overlapStart + 1);
+                destPtr = &renderbuf[bufIdx][bufPos];
+                int16_t bitmapY = screenY - toRender->y;
+                if (bitmapY >= 0 && bitmapY < toRender->height) {
+                  drawAvatar2Buffer(toRender, destPtr, (uint16_t)bitmapY, drawWidth, srcStartX);
+                }
+              }
+
+              _tft->pushPixels(&renderbuf[bufIdx][0], min(spanWidth, SCREENWIDTH));
+              bufIdx = 1 - bufIdx;
+            }
           }
     
-        /* Debugging */
+        if (isDebugEnabled) {
             _tft->drawRect(minx + 1, miny + 1, renderWidth - 1 , renderHeight - 1, TFT_MAGENTA);
-        /* Debugging */
+        }
           
         
       
     } // ends for i loop
+
+    for (int i = 0; i < numRenderableAvatar; ++i) {
+      if (renderableFullRedraw[i]) {
+        renderableAvatar[i]->renderTainted = false;
+      }
+      renderableAvatar[i]->savePreviousRenderPos();
+    }
+
+    _tft->endWrite();
     
   }
   disableDebug(); //always disable after rendering
+}
+
+int GameScene::collectRowRedrawSpans(int16_t screenY, int16_t clipMinx, int16_t clipMaxx,
+                                     int16_t unionDirtyMinx, int16_t unionDirtyMaxx,
+                                     int16_t unionDirtyMiny, int16_t unionDirtyMaxy,
+                                     Avatar** shortlist, const bool* fullRedraw, int shortlistCount,
+                                     int16_t* spanStarts, int16_t* spanEnds, int maxSpans) {
+  int numSpans = 0;
+  for (int i = 0; i < shortlistCount; ++i) {
+    Avatar* avatar = shortlist[i];
+    float oldX = avatar->previousRenderedX;
+    float oldY = avatar->previousRenderedY;
+    float newX = avatar->x;
+    float newY = avatar->y;
+    bool positionChanged = (oldX != newX || oldY != newY);
+
+    if (fullRedraw[i]) {
+      int16_t curMinY = (int16_t)newY;
+      int16_t curMaxY = (int16_t)(newY + avatar->height - 1);
+      if (screenY >= curMinY && screenY <= curMaxY) {
+        int16_t spanMinx = (int16_t)newX;
+        int16_t spanMaxx = (int16_t)(newX + avatar->width - 1);
+        if (numSpans < maxSpans) {
+          if (spanMinx < clipMinx) spanMinx = clipMinx;
+          if (spanMaxx > clipMaxx) spanMaxx = clipMaxx;
+          if (spanMinx <= spanMaxx) {
+            spanStarts[numSpans] = spanMinx;
+            spanEnds[numSpans] = spanMaxx;
+            numSpans++;
+          }
+        }
+      }
+
+      if (positionChanged) {
+        int16_t dirtyMinY = (int16_t)((oldY < newY) ? oldY : newY);
+        int16_t dirtyMaxY = (int16_t)(((oldY < newY) ? newY : oldY) + avatar->height - 1);
+        if (screenY >= dirtyMinY && screenY <= dirtyMaxY) {
+          int16_t spanMinx = (int16_t)((oldX < newX) ? oldX : newX);
+          int16_t spanMaxx = (int16_t)(((oldX < newX) ? newX : oldX) + avatar->width - 1);
+          if (numSpans < maxSpans) {
+            if (spanMinx < clipMinx) spanMinx = clipMinx;
+            if (spanMaxx > clipMaxx) spanMaxx = clipMaxx;
+            if (spanMinx <= spanMaxx) {
+              spanStarts[numSpans] = spanMinx;
+              spanEnds[numSpans] = spanMaxx;
+              numSpans++;
+            }
+          }
+        }
+      }
+    } else {
+      int16_t curMinY = (int16_t)newY;
+      int16_t curMaxY = (int16_t)(newY + avatar->height - 1);
+      if (screenY < curMinY || screenY > curMaxY) {
+        continue;
+      }
+      if (screenY < unionDirtyMiny || screenY > unionDirtyMaxy) {
+        continue;
+      }
+
+      int16_t spanMinx = (int16_t)newX;
+      int16_t spanMaxx = (int16_t)(newX + avatar->width - 1);
+      if (spanMinx < unionDirtyMinx) {
+        spanMinx = unionDirtyMinx;
+      }
+      if (spanMaxx > unionDirtyMaxx) {
+        spanMaxx = unionDirtyMaxx;
+      }
+      if (numSpans < maxSpans) {
+        if (spanMinx < clipMinx) {
+          spanMinx = clipMinx;
+        }
+        if (spanMaxx > clipMaxx) {
+          spanMaxx = clipMaxx;
+        }
+        if (spanMinx <= spanMaxx) {
+          spanStarts[numSpans] = spanMinx;
+          spanEnds[numSpans] = spanMaxx;
+          numSpans++;
+        }
+      }
+    }
+  }
+
+  if (numSpans <= 1) {
+    return numSpans;
+  }
+
+  for (int i = 1; i < numSpans; ++i) {
+    int16_t start = spanStarts[i];
+    int16_t end = spanEnds[i];
+    int j = i;
+    while (j > 0 && spanStarts[j - 1] > start) {
+      spanStarts[j] = spanStarts[j - 1];
+      spanEnds[j] = spanEnds[j - 1];
+      --j;
+    }
+    spanStarts[j] = start;
+    spanEnds[j] = end;
+  }
+
+  int merged = 0;
+  for (int i = 0; i < numSpans; ++i) {
+    if (merged == 0 || spanStarts[i] > spanEnds[merged - 1] + 1) {
+      spanStarts[merged] = spanStarts[i];
+      spanEnds[merged] = spanEnds[i];
+      merged++;
+    } else if (spanEnds[i] > spanEnds[merged - 1]) {
+      spanEnds[merged - 1] = spanEnds[i];
+    }
+  }
+  return merged;
+}
+
+void GameScene::markAvatarsUnder(Avatar* mover) {
+  if (mover == NULL) {
+    return;
+  }
+
+  int moverIndex = -1;
+  for (int i = 0; i < numAvatar; ++i) {
+    if (avatars[i] == mover) {
+      moverIndex = i;
+      break;
+    }
+  }
+  if (moverIndex <= 0) {
+    return;
+  }
+
+  int16_t moverMinx = (int16_t)mover->x;
+  int16_t moverMiny = (int16_t)mover->y;
+  int16_t moverMaxx = (int16_t)(mover->x + mover->width - 1);
+  int16_t moverMaxy = (int16_t)(mover->y + mover->height - 1);
+
+  for (int i = 0; i < moverIndex; ++i) {
+    Avatar* avatar = avatars[i];
+    if (avatar == NULL) {
+      continue;
+    }
+    int16_t avatarMinx = (int16_t)avatar->x;
+    int16_t avatarMiny = (int16_t)avatar->y;
+    int16_t avatarMaxx = (int16_t)(avatar->x + avatar->width - 1);
+    int16_t avatarMaxy = (int16_t)(avatar->y + avatar->height - 1);
+    if (avatarMaxx < moverMinx || avatarMinx > moverMaxx ||
+        avatarMaxy < moverMiny || avatarMiny > moverMaxy) {
+      continue;
+    }
+    avatar->renderTainted = true;
+  }
 }
 
 int GameScene::getNextRenderAvatar(int previousMin, int toBeRendered2RenderableMap[], int toBeRenderedIndex) {
@@ -381,50 +709,5 @@ int GameScene::getNextRenderAvatar(int previousMin, int toBeRendered2RenderableM
 
 
 void GameScene :: addSound(int soundTone, int soundDuration) {
-  if (soundCount >= MAX_SOUND_TONE_SIZE) {
-    Serial.println("sound dropped");
-    return;
-  }
-  soundToneArr[soundCountTail] = soundTone;
-  soundDurationArr[soundCountTail] = soundDuration;
-  if (++soundCountTail >= MAX_SOUND_TONE_SIZE) {
-    soundCountTail = 0;
-  }
-  soundCount++;
-}
-void GameScene::playSound() {
-  if (millis() >= soundStop) { //check if need to turn off current sound
-    if (playingSound) {
-      noTone(SPEAKER_PIN); //D0 - GPIO 16
-      playingSound = false;
-    }
-
-    if (soundCount > 0) {
-      int soundTone = soundToneArr[soundCountHead];
-      int soundDuration = soundDurationArr[soundCountHead];
-      soundStop = millis() + soundDuration;
-      if (soundTone == 0) {
-        if (playingSound) {
-          noTone(SPEAKER_PIN);
-          playingSound = false;
-        }
-      } else {
-        tone(SPEAKER_PIN, soundTone, soundDuration);
-        playingSound = true;
-      }
-#ifdef DEBUG
-      Serial.print("Play Tone ");
-      Serial.print(soundTone);
-      Serial.print(" Duration  ");
-      Serial.print(soundDuration);
-      Serial.print(" stop at ");
-
-      Serial.println(soundStop);
-#endif
-      soundCount--;
-      if (++soundCountHead >= MAX_SOUND_TONE_SIZE) {
-        soundCountHead = 0;
-      }
-    }
-  }
+  SoundPlayer::enqueue(soundTone, soundDuration);
 }

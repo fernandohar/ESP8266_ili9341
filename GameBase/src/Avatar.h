@@ -145,19 +145,30 @@ class Avatar {
       return this->_enableBreathing;
     }
 
-    //Return true if (x,y) is with in boundary of the Avatar
+    // Return true if (x,y) is on a non-transparent pixel of the current frame.
     bool contains(uint16_t targetX, uint16_t targetY) {
-      return ( (targetX > this->x) &&
-               (targetX < (this->x + this->width) ) &&
-               (targetY > this->y) &&
-               (targetY < (this->y + this->height) )
-             );
+      if (targetX <= this->x || targetX >= (this->x + this->width) ||
+          targetY <= this->y || targetY >= (this->y + this->height)) {
+        return false;
+      }
+
+      const uint8_t *mask = getMask();
+      if (mask == NULL) {
+        return true;
+      }
+
+      uint16_t localX = targetX - (uint16_t)this->x;
+      uint16_t localY = targetY - (uint16_t)this->y;
+      uint16_t bytesPerRow = (this->width + 7) / 8;
+      uint8_t maskByte = pgm_read_byte(mask + (uint32_t)localY * bytesPerRow + (localX >> 3));
+      return (maskByte & (0x80 >> (localX & 7))) != 0;
     }
   private:
     unsigned long nextPosUpdateTime = 0;
     unsigned long breathUpdateTime = 0;
     float previousRenderedX = 0;
     float previousRenderedY = 0;
+    bool renderTainted = false;
     uint16_t _breathPosition = 0;
     boolean _enableBreathing = false;
     uint16_t _breathInterval = 0;
