@@ -90,7 +90,7 @@ class GameScene {
     }
   protected:
     TFT_eSPI *_tft;
-    Avatar* avatars[MAX_AVATAR];
+    Avatar* avatars[MAX_AVATAR] = {};
     int numAvatar = 0;
     uint16_t renderbuf[2][SCREENWIDTH];
     const uint16_t *background = NULL;

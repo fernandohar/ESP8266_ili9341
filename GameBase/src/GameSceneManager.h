@@ -9,6 +9,7 @@
 //#define DEBUG_SCENEMANAGER
 #include <Arduino.h>
 #include "GameScene.h"
+#include "Input.h"
 #include "SoundPlayer.h"
 #include <TFT_eSPI.h>
 
@@ -40,13 +41,24 @@ class GameSceneManager {
           _nextSceneIndex = -1;
           return;
         }
-        
+
+        // Poll inputs once per fixed tick (not per loop()). Button edges like
+        // homePressed are only true for a single Input::update(); polling faster
+        // than the tick would clear the edge before a scene ever sees it.
+        Input::update();
+
         boolean isTouching = (_touchReader != NULL) ? _touchReader() : (digitalRead(_touchIrq) == LOW);
 
 #if !defined(ARDUINO_ARCH_ESP32)
         SoundPlayer::update();
 #endif
-        _currentScenePtr->update(isTouching, &needChangeScene, &_nextSceneIndex); //Suppose we use Constant Update speed of 50 times per seconds (50 / 1000 = 20) = diration
+        _currentScenePtr->update(isTouching, &needChangeScene, &_nextSceneIndex);
+        if (needChangeScene && _nextSceneIndex != -1) {
+          changeScene(_nextSceneIndex);
+          needChangeScene = false;
+          _nextSceneIndex = -1;
+          return;
+        }
         nextUpdate += UPDATES_DT;
         loop++;
 
@@ -84,7 +96,8 @@ class GameSceneManager {
       }
       _currentSceneIndex = sceneIndex;
       _currentScenePtr = _scenes[_currentSceneIndex];
-      _currentScenePtr->initScene();   
+      _currentScenePtr->initScene();
+      Input::syncEdges();
 
 //#ifdef DEBUG_SCENEMANAGER       
 //      frameStart = millis();

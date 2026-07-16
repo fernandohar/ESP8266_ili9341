@@ -13,6 +13,10 @@ void GameScene :: destroyScene() {
 }
 
 void GameScene :: appendAvatar(Avatar * avatar) {
+  if (numAvatar >= MAX_AVATAR) {
+    delete avatar;
+    return;
+  }
   avatars[numAvatar++] = avatar;
 }
     
@@ -184,6 +188,37 @@ void GameScene::fillBufferWithColor(uint16_t width, uint16_t color, uint16_t * d
 
 void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y, uint16_t maxWidth, uint16_t srcStartX) {
   if (maxWidth == 0) {
+    return;
+  }
+
+  if (avatar->usesSheetSource()) {
+    uint16_t renderwidth = maxWidth;
+    uint16_t bitmapoffset = srcStartX;
+    uint16_t sheetBw = (avatar->sheetWidth + 7) / 8;
+
+    if (srcStartX == 0 && avatar->x < 0) {
+      renderwidth = (avatar->width + avatar->x);
+      if (renderwidth > maxWidth) {
+        renderwidth = maxWidth;
+      }
+      if (renderwidth == 0) {
+        return;
+      }
+      bitmapoffset = (uint16_t)abs(avatar->x);
+    }
+
+    for (uint16_t x = 0; x < renderwidth; x++) {
+      uint16_t localX = x + bitmapoffset;
+      uint16_t sheetX = avatar->sheetSrcX + localX;
+      uint16_t sheetY = avatar->sheetSrcY + y;
+      uint8_t maskByte = pgm_read_byte(avatar->sheetMask + (uint32_t)sheetY * sheetBw + (sheetX >> 3));
+      if (maskByte & (0x80 >> (sheetX & 7))) {
+        uint16_t c = pgm_read_word_far(avatar->sheetBitmap + (uint32_t)sheetY * avatar->sheetWidth + sheetX);
+        *destPtr++ = c;
+      } else {
+        *destPtr++;
+      }
+    }
     return;
   }
 

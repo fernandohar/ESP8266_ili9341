@@ -106,6 +106,36 @@ class Avatar {
       this->y = y;
     }
 
+    void setSheetSource(const uint16_t *sheetBitmap, const uint8_t *sheetMask, uint16_t sheetW,
+                        uint16_t srcX, uint16_t srcY, uint16_t regionWidth, uint16_t regionHeight) {
+      useSheetSource = true;
+      this->sheetBitmap = sheetBitmap;
+      this->sheetMask = sheetMask;
+      this->sheetWidth = sheetW;
+      this->sheetSrcX = srcX;
+      this->sheetSrcY = srcY;
+      this->width = regionWidth;
+      this->height = regionHeight;
+    }
+
+    void clearSheetSource() {
+      useSheetSource = false;
+      sheetBitmap = NULL;
+      sheetMask = NULL;
+      sheetWidth = 0;
+      sheetSrcX = 0;
+      sheetSrcY = 0;
+    }
+
+    void requestRedraw() {
+      previousRenderedX = x - 1.0f;
+      previousRenderedY = y;
+    }
+
+    bool usesSheetSource() const {
+      return useSheetSource;
+    }
+
 
     void updatePos(unsigned long currentTime) {
       if (currentTime >= this->nextPosUpdateTime) {
@@ -159,6 +189,14 @@ class Avatar {
 
       uint16_t localX = targetX - (uint16_t)this->x;
       uint16_t localY = targetY - (uint16_t)this->y;
+      if (useSheetSource) {
+        uint16_t sheetX = sheetSrcX + localX;
+        uint16_t sheetY = sheetSrcY + localY;
+        uint16_t bytesPerSheetRow = (sheetWidth + 7) / 8;
+        uint8_t maskByte = pgm_read_byte(sheetMask + (uint32_t)sheetY * bytesPerSheetRow + (sheetX >> 3));
+        return (maskByte & (0x80 >> (sheetX & 7))) != 0;
+      }
+
       uint16_t bytesPerRow = (this->width + 7) / 8;
       uint8_t maskByte = pgm_read_byte(mask + (uint32_t)localY * bytesPerRow + (localX >> 3));
       return (maskByte & (0x80 >> (localX & 7))) != 0;
@@ -169,6 +207,12 @@ class Avatar {
     float previousRenderedX = 0;
     float previousRenderedY = 0;
     bool renderTainted = false;
+    bool useSheetSource = false;
+    const uint16_t *sheetBitmap = NULL;
+    const uint8_t *sheetMask = NULL;
+    uint16_t sheetWidth = 0;
+    uint16_t sheetSrcX = 0;
+    uint16_t sheetSrcY = 0;
     uint16_t _breathPosition = 0;
     boolean _enableBreathing = false;
     uint16_t _breathInterval = 0;
