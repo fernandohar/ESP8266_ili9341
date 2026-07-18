@@ -11,6 +11,7 @@
 #define SCENE_PET_TOTORO 1
 #define SCENE_ACORN_CATCH 2
 #define SCENE_SETTINGS 3
+#define SCENE_TIC_TAC_TOE 4
 
 struct HubLocation {
   int16_t ringX;
@@ -78,12 +79,13 @@ class Scene_Hub : public GameScene {
     }
 
   private:
-    static const int LOCATION_COUNT = 3;
+    static const int LOCATION_COUNT = 4;
 
     HubLocation locations[LOCATION_COUNT] = {
       { 58, 108, 12, 58, 108, 132, SCENE_ACORN_CATCH },
       { 120, 168, 55, 118, 132, 132, SCENE_PET_TOTORO },
       { 178, 248, 118, 195, 118, 115, SCENE_SETTINGS },
+      { 180, 60, 130, 12, 100, 80, SCENE_TIC_TAC_TOE },
     };
 
     int selectedIndex = 1;

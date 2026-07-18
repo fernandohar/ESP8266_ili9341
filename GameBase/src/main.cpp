@@ -16,6 +16,7 @@
 #include "Scene_PetTotoro.h"
 #include "Scene_AcornCatch.h"
 #include "Scene_Settings.h"
+#include "Scene_TicTacToe.h"
 #include "TouchCalibration.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -163,6 +164,7 @@ void setup() {
   manager->appendScene(new Scene_PetTotoro(tft));           // 1 - Pet Totoro
   manager->appendScene(new Scene_AcornCatch(tft));          // 2 - Acorn Catch
   manager->appendScene(new Scene_Settings(tft));            // 3 - Settings
+  manager->appendScene(new Scene_TicTacToe(tft));           // 4 - Tic Tac Toe
 
   Serial.println("Start up Completed");
 #if !defined(WOKWI_CAP_TOUCH)
