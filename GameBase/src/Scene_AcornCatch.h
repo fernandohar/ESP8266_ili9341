@@ -14,9 +14,10 @@
 #include "sprite_digits.h"
 #include "sprite_letters.h"
 #include "sprite_mei.h"
+#include "sprite_soot_mole.h"
 #include "sprite_stopwatch.h"
 
-#define ACORN_CATCH_TARGET 25
+#define ACORN_CATCH_TARGET 30
 #define ACORN_CATCH_TIME_MS 40000
 #define MAX_FALLING_ACORNS 6
 #define GROUND_Y 226
@@ -34,8 +35,48 @@
 #define MEI_RUN_FRAMES 6
 #define MEI_RUN_FRAME_MS 90
 // Keep Mei's feet on the same ground line as the old 48x68 sprite.
-#define PLAYER_GROUND_Y (GROUND_Y + 68 - MEI_FRAME_H)
+//#define PLAYER_GROUND_Y (GROUND_Y + 68 - MEI_FRAME_H)
+#define PLAYER_GROUND_Y (GROUND_Y - 8)
 #define ACORN_FALL_SPEED 5.0f
+// Each falling acorn gets a random constant speed in this range (px per 50ms).
+#define ACORN_MIN_FALL_SPEED 3.0f
+#define ACORN_MAX_FALL_SPEED 8.0f
+// Acorns speed up the longer the round runs: this much is added to the spawn
+// speed range per elapsed second, capped so it stays playable.
+#define ACORN_SPEED_RAMP_PER_SEC 0.15f
+#define ACORN_SPEED_RAMP_MAX 12.0f
+// Time is only added every Nth acorn caught (higher = harder to bank time).
+#define ACORN_TIME_BONUS_EVERY 2
+// The time bonus when it does apply, capped at the starting time.
+#define ACORN_TIME_BONUS_MS 2000
+
+// Soot-mole hazard: falls occasionally, costs acorns if it hits Mei.
+#define MAX_SOOT 2
+#define SOOT_SIZE 44
+#define SOOT_VARIANTS 10
+#define SOOT_MIN_FALL_SPEED 3.0f
+#define SOOT_MAX_FALL_SPEED 6.0f
+#define SOOT_SPAWN_MIN_MS 3500
+#define SOOT_SPAWN_MAX_MS 7000
+#define SOOT_PENALTY 5
+// Getting hit by soot also burns time off the clock.
+#define SOOT_TIME_PENALTY_MS 3000
+// Remove a soot once this fraction of its height has passed below Mei's feet,
+// so she can't step onto one resting near the ground.
+#define SOOT_CLEAR_BELOW_FEET 0.8f
+
+// Sonic-style acorn scatter shown when Mei is hit (purely visual).
+#define MAX_SCATTER_ACORNS 5
+#define SCATTER_GRAVITY 0.6f
+
+// Chu can jump to contest acorns at Mei's height.
+#define CHU_JUMP_V (-7.0f)
+#define CHU_GRAVITY 0.6f
+#define CHU_JUMP_ALIGN_X 18
+#define CHU_JUMP_CHANCE 60
+#define CHU_JUMP_COOLDOWN_MS 900
+// Physics step for jump/scatter, matching the acorn fall cadence.
+#define PHYSICS_STEP_MS 50
 #define MAX_END_MESSAGE_GLYPHS 16
 #define END_MESSAGE_LINE1_Y 140
 #define END_MESSAGE_LINE2_Y 165
@@ -95,9 +136,17 @@ class Scene_AcornCatch : public GameScene {
         return;
       }
 
+      bool step = false;
+      if (now >= nextStepMs) {
+        step = true;
+        nextStepMs = now + PHYSICS_STEP_MS;
+      }
+
       updatePlayer(input);
-      updateEnemy();
+      updateEnemy(now, step);
       updateAcorns(now);
+      updateSoot(now);
+      updateScatter(step);
       if (checkCollisions()) {
         return;
       }
@@ -148,10 +197,38 @@ class Scene_AcornCatch : public GameScene {
         acorns[i]->setVelocity(0, 0);
         acorns[i]->updateInterval = 50;
         acornActive[i] = false;
+        acornSpeed[i] = ACORN_FALL_SPEED;
         appendAvatar(acorns[i]);
       }
 
+      SpriteSheet sootSh = sootSheet();
+      for (int i = 0; i < MAX_SOOT; i++) {
+        soots[i] = sootSh.createAvatar(-SOOT_SIZE - 20, SCREENHEIGHT + 60,
+                                       SpriteSheet::readRegion(sprite_soot_moleRegions, 0));
+        soots[i]->updateInterval = 50;
+        sootActive[i] = false;
+        appendAvatar(soots[i]);
+      }
+
+      for (int i = 0; i < MAX_SCATTER_ACORNS; i++) {
+        scatterAcorns[i] = new Avatar(-40, SCREENHEIGHT + 40, SPRITE_ACORN_WIDTH, SPRITE_ACORN_HEIGHT,
+                                      sprite_acorn, sprite_acornMask);
+        scatterAcorns[i]->setVelocity(0, 0);
+        scatterAcorns[i]->updateInterval = 50;
+        scatterActive[i] = false;
+        appendAvatar(scatterAcorns[i]);
+      }
+
+      chuJumping = false;
+      chuVy = 0;
+      chuJumpVx = 0;
+      chuY = GROUND_Y;
+      lastChuJumpMs = 0;
+      nextSootMs = 0;
+      nextStepMs = 0;
+
       score = 0;
+      caughtCount = 0;
       state = ACORN_STATE_READY;
       stateStartMs = millis();
       nextSpawnMs = 0;
@@ -175,6 +252,14 @@ class Scene_AcornCatch : public GameScene {
         acorns[i] = NULL;
         acornActive[i] = false;
       }
+      for (int i = 0; i < MAX_SOOT; i++) {
+        soots[i] = NULL;
+        sootActive[i] = false;
+      }
+      for (int i = 0; i < MAX_SCATTER_ACORNS; i++) {
+        scatterAcorns[i] = NULL;
+        scatterActive[i] = false;
+      }
       clearEndMessageAvatars();
       GameScene::destroyScene();
     }
@@ -183,6 +268,21 @@ class Scene_AcornCatch : public GameScene {
     Avatar *player = NULL;
     Avatar *enemy = NULL;
     Avatar *acorns[MAX_FALLING_ACORNS];
+    float acornSpeed[MAX_FALLING_ACORNS];
+    Avatar *soots[MAX_SOOT];
+    bool sootActive[MAX_SOOT];
+    float sootSpeed[MAX_SOOT];
+    unsigned long nextSootMs = 0;
+    Avatar *scatterAcorns[MAX_SCATTER_ACORNS];
+    bool scatterActive[MAX_SCATTER_ACORNS];
+    float scatterVx[MAX_SCATTER_ACORNS];
+    float scatterVy[MAX_SCATTER_ACORNS];
+    unsigned long nextStepMs = 0;
+    bool chuJumping = false;
+    float chuVy = 0;
+    float chuJumpVx = 0;
+    float chuY = GROUND_Y;
+    unsigned long lastChuJumpMs = 0;
     Avatar *hudWatch = NULL;
     Avatar *hudTimeTens = NULL;
     Avatar *hudTimeOnes = NULL;
@@ -193,6 +293,7 @@ class Scene_AcornCatch : public GameScene {
     bool acornActive[MAX_FALLING_ACORNS];
 
     int score = 0;
+    int caughtCount = 0;
     int meiFrame = 0;
     bool meiFacingRight = true;
     unsigned long meiFrameMs = 0;
@@ -217,6 +318,15 @@ class Scene_AcornCatch : public GameScene {
 
     SpriteSheet meiSheet() const {
       return SpriteSheet(sprite_mei, sprite_meiMask, SPRITE_MEI_WIDTH, SPRITE_MEI_HEIGHT);
+    }
+
+    SpriteSheet sootSheet() const {
+      return SpriteSheet(sprite_soot_mole, sprite_soot_moleMask, SPRITE_SOOT_MOLE_WIDTH, SPRITE_SOOT_MOLE_HEIGHT);
+    }
+
+    // Random speed in [lo, hi] at 0.1 px resolution.
+    float randSpeed(float lo, float hi) const {
+      return lo + (float)random(0, (int)((hi - lo) * 10.0f) + 1) / 10.0f;
     }
 
     // Six right-facing run frames (0..5). Left-facing is done at draw time via
@@ -296,6 +406,8 @@ class Scene_AcornCatch : public GameScene {
       stateStartMs = now;
       gameEndMs = now + ACORN_CATCH_TIME_MS;
       nextSpawnMs = now + 500;
+      nextSootMs = now + random(SOOT_SPAWN_MIN_MS, SOOT_SPAWN_MAX_MS);
+      nextStepMs = now + PHYSICS_STEP_MS;
       resetHudCache();
       addSound(NOTE_C5, noteDurationMs(8, 800));
       requestRender();
@@ -318,7 +430,7 @@ class Scene_AcornCatch : public GameScene {
       requestRender();
     }
 
-    void loseGame(unsigned long now) {
+    void loseGame(unsigned long now, const char *line1 = "TIME UP", const char *line2 = "GAME OVER") {
       (void)now;
       if (state == ACORN_STATE_WON || state == ACORN_STATE_LOST) {
         return;
@@ -327,7 +439,7 @@ class Scene_AcornCatch : public GameScene {
       freezeGameplay();
       resetHudCache();
       updateHudAvatars(millis());
-      showEndMessage("TIME UP", "GAME OVER");
+      showEndMessage(line1, line2);
       addSound(NOTE_G3, noteDurationMs(4, 600));
       addSound(NOTE_E3, noteDurationMs(4, 600));
       requestRender();
@@ -341,6 +453,19 @@ class Scene_AcornCatch : public GameScene {
           deactivateAcorn(i);
         }
       }
+      for (int i = 0; i < MAX_SOOT; i++) {
+        if (sootActive[i]) {
+          deactivateSoot(i);
+        }
+      }
+      for (int i = 0; i < MAX_SCATTER_ACORNS; i++) {
+        scatterActive[i] = false;
+        scatterAcorns[i]->setPos(-40, SCREENHEIGHT + 40);
+      }
+      chuJumping = false;
+      chuVy = 0;
+      chuY = GROUND_Y;
+      enemy->y = GROUND_Y;
     }
 
     void clearEndMessageAvatars() {
@@ -417,26 +542,46 @@ class Scene_AcornCatch : public GameScene {
       }
     }
 
-    void updateEnemy() {
-      Avatar *target = findNearestAcorn();
-      float vx = 0;
+    void updateEnemy(unsigned long now, bool step) {
+      float vx;
 
-      if (target != NULL) {
-        if (enemy->x + enemy->width / 2 < target->x + 2) {
-          vx = ENEMY_SPEED;
-        } else if (enemy->x + enemy->width / 2 > target->x + target->width - 2) {
-          vx = -ENEMY_SPEED;
+      if (chuJumping) {
+        // Direction is locked for the whole jump so an airborne Chu can't steer
+        // onto Mei, keeping it from being overpowering.
+        vx = chuJumpVx;
+      } else {
+        vx = 0;
+        Avatar *target = findNearestAcorn();
+        if (target != NULL) {
+          if (enemy->x + enemy->width / 2 < target->x + 2) {
+            vx = ENEMY_SPEED;
+          } else if (enemy->x + enemy->width / 2 > target->x + target->width - 2) {
+            vx = -ENEMY_SPEED;
+          }
+        } else if (player != NULL) {
+          if (enemy->x < player->x - 10) {
+            vx = ENEMY_SPEED * 0.6f;
+          } else if (enemy->x > player->x + 10) {
+            vx = -ENEMY_SPEED * 0.6f;
+          }
         }
-      } else if (player != NULL) {
-        if (enemy->x < player->x - 10) {
-          vx = ENEMY_SPEED * 0.6f;
-        } else if (enemy->x > player->x + 10) {
-          vx = -ENEMY_SPEED * 0.6f;
+
+        // Jump to contest acorns at Mei's height when lined up with her. Single
+        // jump only (guarded by chuJumping) with a cooldown.
+        if (step && player != NULL && (now - lastChuJumpMs) >= CHU_JUMP_COOLDOWN_MS) {
+          int chuCx = (int)(enemy->x + enemy->width / 2);
+          int meiCx = (int)(player->x + player->width / 2);
+          if (abs(chuCx - meiCx) < CHU_JUMP_ALIGN_X && random(0, 100) < CHU_JUMP_CHANCE) {
+            chuJumping = true;
+            chuVy = CHU_JUMP_V;
+            chuJumpVx = vx;
+            lastChuJumpMs = now;
+          }
         }
       }
 
       enemy->setVelocity(vx, 0);
-      enemy->updatePos(millis());
+      enemy->updatePos(now);
 
       if (enemy->x < 0) {
         enemy->x = 0;
@@ -444,7 +589,17 @@ class Scene_AcornCatch : public GameScene {
       if (enemy->x + enemy->width > SCREENWIDTH) {
         enemy->x = SCREENWIDTH - enemy->width;
       }
-      enemy->y = GROUND_Y;
+
+      if (chuJumping && step) {
+        chuY += chuVy;
+        chuVy += CHU_GRAVITY;
+        if (chuY >= GROUND_Y) {
+          chuY = GROUND_Y;
+          chuJumping = false;
+          chuVy = 0;
+        }
+      }
+      enemy->y = chuJumping ? chuY : (float)GROUND_Y;
     }
 
     Avatar *findNearestAcorn() {
@@ -476,7 +631,7 @@ class Scene_AcornCatch : public GameScene {
         if (!acornActive[i]) {
           continue;
         }
-        acorns[i]->setVelocity(0, ACORN_FALL_SPEED);
+        acorns[i]->setVelocity(0, acornSpeed[i]);
         acorns[i]->updatePos(now);
 
         if (acorns[i]->y > SCREENHEIGHT) {
@@ -500,7 +655,14 @@ class Scene_AcornCatch : public GameScene {
         if (!acornActive[i]) {
           int16_t spawnX = 20 + random(0, SCREENWIDTH - SPRITE_ACORN_WIDTH - 40);
           acorns[i]->setPos(spawnX, HUD_ZONE_Y);
-          acorns[i]->setVelocity(0, ACORN_FALL_SPEED);
+          // Speed ramps up with elapsed play time.
+          float elapsedSec = (millis() - stateStartMs) / 1000.0f;
+          float ramp = elapsedSec * ACORN_SPEED_RAMP_PER_SEC;
+          if (ramp > ACORN_SPEED_RAMP_MAX) {
+            ramp = ACORN_SPEED_RAMP_MAX;
+          }
+          acornSpeed[i] = randSpeed(ACORN_MIN_FALL_SPEED + ramp, ACORN_MAX_FALL_SPEED + ramp);
+          acorns[i]->setVelocity(0, acornSpeed[i]);
           acornActive[i] = true;
           requestRender();
           return;
@@ -515,6 +677,97 @@ class Scene_AcornCatch : public GameScene {
       requestRender();
     }
 
+    void updateSoot(unsigned long now) {
+      if (now >= nextSootMs) {
+        spawnSoot();
+        nextSootMs = now + random(SOOT_SPAWN_MIN_MS, SOOT_SPAWN_MAX_MS);
+      }
+
+      for (int i = 0; i < MAX_SOOT; i++) {
+        if (!sootActive[i]) {
+          continue;
+        }
+        soots[i]->setVelocity(0, sootSpeed[i]);
+        soots[i]->updatePos(now);
+        // Disappear once most of the soot is below Mei's feet line.
+        float feetY = player->y + player->height;
+        float clearY = feetY - (1.0f - SOOT_CLEAR_BELOW_FEET) * SOOT_SIZE;
+        if (soots[i]->y >= clearY || soots[i]->y > SCREENHEIGHT) {
+          deactivateSoot(i);
+        }
+      }
+    }
+
+    void spawnSoot() {
+      for (int i = 0; i < MAX_SOOT; i++) {
+        if (!sootActive[i]) {
+          int variant = random(0, SOOT_VARIANTS);
+          sootSheet().applyRegion(soots[i], SpriteSheet::readRegion(sprite_soot_moleRegions, variant));
+          int16_t spawnX = random(0, SCREENWIDTH - SOOT_SIZE);
+          soots[i]->setPos(spawnX, HUD_ZONE_Y);
+          sootSpeed[i] = randSpeed(SOOT_MIN_FALL_SPEED, SOOT_MAX_FALL_SPEED);
+          soots[i]->setVelocity(0, sootSpeed[i]);
+          soots[i]->requestRedraw();
+          sootActive[i] = true;
+          requestRender();
+          return;
+        }
+      }
+    }
+
+    void deactivateSoot(int index) {
+      sootActive[index] = false;
+      soots[index]->setPos(soots[index]->x, SCREENHEIGHT + 60);
+      soots[index]->setVelocity(0, 0);
+      requestRender();
+    }
+
+    // Sonic-style: fling up to `count` acorns out of Mei; purely visual.
+    void triggerScatter(int count) {
+      if (count <= 0) {
+        return;
+      }
+      float cx = player->x + player->width / 2.0f - SPRITE_ACORN_WIDTH / 2.0f;
+      float cy = player->y + player->height / 3.0f;
+      int spawned = 0;
+      for (int i = 0; i < MAX_SCATTER_ACORNS && spawned < count; i++) {
+        if (scatterActive[i]) {
+          continue;
+        }
+        scatterAcorns[i]->setPos(cx, cy);
+        float dir = (spawned % 2 == 0) ? 1.0f : -1.0f;
+        scatterVx[i] = dir * (2.0f + random(0, 30) / 10.0f);  // 2.0 .. 5.0 outward
+        scatterVy[i] = -(4.0f + random(0, 30) / 10.0f);        // 4.0 .. 7.0 upward
+        scatterActive[i] = true;
+        spawned++;
+      }
+      requestRender();
+    }
+
+    void updateScatter(bool step) {
+      if (!step) {
+        return;
+      }
+      bool any = false;
+      for (int i = 0; i < MAX_SCATTER_ACORNS; i++) {
+        if (!scatterActive[i]) {
+          continue;
+        }
+        any = true;
+        scatterVy[i] += SCATTER_GRAVITY;
+        float nx = scatterAcorns[i]->x + scatterVx[i];
+        float ny = scatterAcorns[i]->y + scatterVy[i];
+        scatterAcorns[i]->setPos(nx, ny);
+        if (ny > SCREENHEIGHT || nx < -SPRITE_ACORN_WIDTH || nx > SCREENWIDTH) {
+          scatterActive[i] = false;
+          scatterAcorns[i]->setPos(-40, SCREENHEIGHT + 40);
+        }
+      }
+      if (any) {
+        requestRender();
+      }
+    }
+
     bool checkCollisions() {
       for (int i = 0; i < MAX_FALLING_ACORNS; i++) {
         if (!acornActive[i]) {
@@ -523,6 +776,15 @@ class Scene_AcornCatch : public GameScene {
 
         if (physics::aabbTest(*player, *acorns[i])) {
           score++;
+          caughtCount++;
+          // Only every Nth acorn extends the clock, capped at the starting time.
+          if (caughtCount % ACORN_TIME_BONUS_EVERY == 0) {
+            unsigned long capEnd = millis() + ACORN_CATCH_TIME_MS;
+            gameEndMs += ACORN_TIME_BONUS_MS;
+            if (gameEndMs > capEnd) {
+              gameEndMs = capEnd;
+            }
+          }
           addSound(NOTE_E5, noteDurationMs(16, 900));
           deactivateAcorn(i);
           updateHudAvatars(millis());
@@ -537,6 +799,40 @@ class Scene_AcornCatch : public GameScene {
         if (physics::aabbTest(*enemy, *acorns[i])) {
           addSound(NOTE_A3, noteDurationMs(16, 700));
           deactivateAcorn(i);
+          requestRender();
+        }
+      }
+
+      // Getting hit by soot costs acorns and scatters them out of Mei.
+      for (int i = 0; i < MAX_SOOT; i++) {
+        if (!sootActive[i]) {
+          continue;
+        }
+        if (physics::aabbTest(*player, *soots[i])) {
+          unsigned long hitNow = millis();
+          // Burn time off the clock (clamp to avoid unsigned underflow).
+          if (gameEndMs > hitNow + SOOT_TIME_PENALTY_MS) {
+            gameEndMs -= SOOT_TIME_PENALTY_MS;
+          } else {
+            gameEndMs = hitNow;
+          }
+
+          int lost = (score < SOOT_PENALTY) ? score : SOOT_PENALTY;
+          triggerScatter(lost);
+          addSound(NOTE_A3, noteDurationMs(8, 700));
+          addSound(NOTE_E3, noteDurationMs(8, 700));
+          deactivateSoot(i);
+
+          if (score < SOOT_PENALTY) {
+            // Penalty would push the score below zero -> immediate loss.
+            score = 0;
+            updateHudAvatars(hitNow);
+            loseGame(hitNow, "GAME OVER", "YOU LOSE");
+            return true;
+          }
+
+          score -= SOOT_PENALTY;
+          updateHudAvatars(hitNow);
           requestRender();
         }
       }
