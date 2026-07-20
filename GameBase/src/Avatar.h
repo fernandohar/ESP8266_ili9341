@@ -106,6 +106,17 @@ class Avatar {
       this->y = y;
     }
 
+    // Horizontal mirroring. Works for both plain bitmaps and sprite-sheet
+    // regions, and for the mask-based hit test below, so a single sprite can
+    // face both directions without a second set of frames.
+    bool flipX = false;
+    void setFlipX(bool f) {
+      if (this->flipX != f) {
+        this->flipX = f;
+        requestRedraw();
+      }
+    }
+
     void setSheetSource(const uint16_t *sheetBitmap, const uint8_t *sheetMask, uint16_t sheetW,
                         uint16_t srcX, uint16_t srcY, uint16_t regionWidth, uint16_t regionHeight) {
       useSheetSource = true;
@@ -127,9 +138,12 @@ class Avatar {
       sheetSrcY = 0;
     }
 
+    // Force a repaint of this avatar on the next renderScene() without
+    // disturbing previousRenderedX/Y. Clobbering the previous position (as this
+    // used to do) breaks the dirty-rect union for a moving avatar and leaves a
+    // trail of stale pixels, so use a flag the renderer honours instead.
     void requestRedraw() {
-      previousRenderedX = x - 1.0f;
-      previousRenderedY = y;
+      forceRedraw = true;
     }
 
     bool usesSheetSource() const {
@@ -189,8 +203,9 @@ class Avatar {
 
       uint16_t localX = targetX - (uint16_t)this->x;
       uint16_t localY = targetY - (uint16_t)this->y;
+      uint16_t srcCol = flipX ? (this->width - 1 - localX) : localX;
       if (useSheetSource) {
-        uint16_t sheetX = sheetSrcX + localX;
+        uint16_t sheetX = sheetSrcX + srcCol;
         uint16_t sheetY = sheetSrcY + localY;
         uint16_t bytesPerSheetRow = (sheetWidth + 7) / 8;
         uint8_t maskByte = pgm_read_byte(sheetMask + (uint32_t)sheetY * bytesPerSheetRow + (sheetX >> 3));
@@ -198,8 +213,8 @@ class Avatar {
       }
 
       uint16_t bytesPerRow = (this->width + 7) / 8;
-      uint8_t maskByte = pgm_read_byte(mask + (uint32_t)localY * bytesPerRow + (localX >> 3));
-      return (maskByte & (0x80 >> (localX & 7))) != 0;
+      uint8_t maskByte = pgm_read_byte(mask + (uint32_t)localY * bytesPerRow + (srcCol >> 3));
+      return (maskByte & (0x80 >> (srcCol & 7))) != 0;
     }
   private:
     unsigned long nextPosUpdateTime = 0;
@@ -207,6 +222,7 @@ class Avatar {
     float previousRenderedX = 0;
     float previousRenderedY = 0;
     bool renderTainted = false;
+    bool forceRedraw = false;
     bool useSheetSource = false;
     const uint16_t *sheetBitmap = NULL;
     const uint8_t *sheetMask = NULL;

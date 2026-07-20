@@ -49,6 +49,11 @@ handling:
 |--------|----------------|--------------|
 | `generate_pet_totoro_bg.py` | `assets/pet_totoro_room_ref.png` → `src/image_pet_totoro_bg.h` | Crops a reference room image to 240x320 (`ROOM_VERT_BIAS`, `ROOM_CENTER_BIAS`) and quantizes to a fixed `PALETTE`. |
 | `generate_soot_sheet.py` | `assets/soot_source.png` → `src/sprite_soot.h` | Finds sprite blobs and packs them into uniform 16px cells. |
+| `generate_soot_mole_sheet.py` | `assets/soot_mole_source.png` → `src/sprite_soot_mole.h` | Like `generate_soot_sheet.py` but the source has no real alpha and its blobs touch/overlap, so it labels connected regions, filters for plausible single-creature bbox size/aspect, and isolates each blob's own pixels (keeping enclosed eye-whites) before packing into 44px cells. Used for the Whack-a-Mole "mole". |
+| `generate_whackamole_bg.py` | `assets/whackamole_bg_source.png` → `src/image_whackamole_bg.h` | Straight resize (source is already 3:4) of the onsen-floor art with the baked-in TIME/SCORE/HITS wooden sign. |
+| `generate_grass_tile.py` | `assets/tictactoe_bg_elements_source.png` → `src/image_grass_tile.h` | Crops a clean 50x50 grass patch and makes it seamless (offset+feather) for use as a *repeating* background tile - far smaller than a full-screen image. See "tiled backgrounds" below. |
+| `generate_ttt_grid.py` | `assets/tictactoe_bg_elements_source.png` → `src/sprite_ttt_grid.h` | Crops the wooden "#" grid and keys out its black background so it overlays as a transparent 210x210 Avatar over the tiled grass. |
+| `generate_ttt_tokens.py` | `assets/ttt_mei_source.png` + `assets/ttt_catbus_source.png` → `src/sprite_ttt_tokens.h` | Crops a square around each character's face and applies a circular alpha mask + coloured ring, giving clean round game tokens (Mei = O, Cat Bus = X) that read over the grass board. Edit the per-token crop boxes/ring colours in `TOKENS`. |
 | `generate_digit_sheet.py` / `generate_letter_sheet.py` / `pack_digit_sheet.py` | procedural / source PNG → glyph headers | Lays out digit/letter glyphs into a sheet. |
 
 ### Typical workflow to add or replace an image
@@ -67,6 +72,19 @@ handling:
 
 > Prefer regenerating an asset from a source PNG over hand-editing the generated
 > header. Never hand-edit the large PROGMEM arrays.
+
+### Tiled (repeating) backgrounds — save flash
+
+A full-screen 240x320 background costs ~150 KB of PROGMEM. When the background
+is a repeating texture (e.g. grass), use a small tile instead:
+
+- Generate a small seamless tile (see `generate_grass_tile.py`, 50x50 ≈ 5 KB).
+- In the scene call `setBackgroundTile(tile, TILE_W, TILE_H)` instead of
+  `setBackground(...)`. Both `renderScene()` and `renderFullScreen()` then wrap
+  the tile with modulo indexing across the whole screen (handled in
+  `drawBg2Buffer`), so nothing else in the scene changes.
+- Overlay any non-repeating elements (e.g. a board grid) as transparent
+  Avatars on top (see `Scene_TicTacToe` + `generate_ttt_grid.py`).
 
 ---
 

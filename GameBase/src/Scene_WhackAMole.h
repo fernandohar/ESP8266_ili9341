@@ -4,24 +4,56 @@
 #include <Arduino.h>
 #include "GameScene.h"
 #include "Input.h"
+#include "SpriteSheet.h"
+#include "SpriteText.h"
 #include "TouchInput.h"
+#include "image_whackamole_bg.h"
+#include "sprite_soot_mole.h"
 
-// Placeholder whack-a-mole scene. Replace drawHole()/drawMole() with sprite
-// assets when custom graphics are ready (see AGENTS.md asset pipeline).
+// Onsen-floor background with a baked-in TIME/SCORE/HITS wooden sign at the
+// bottom; soot-sprite "moles" pop up at random spots on the tiled floor.
+// Moles are real Avatars composited by renderScene() (see AGENTS.md), so
+// hiding one is just moving it off-screen - the dirty-rect renderer restores
+// the background underneath automatically.
 
-#define WAM_GRID_COLS 3
-#define WAM_GRID_ROWS 3
-#define WAM_HOLE_COUNT (WAM_GRID_COLS * WAM_GRID_ROWS)
-#define WAM_HOLE_SIZE 64
-#define WAM_HOLE_GAP 10
-#define WAM_GRID_W (WAM_HOLE_SIZE * WAM_GRID_COLS + WAM_HOLE_GAP * (WAM_GRID_COLS - 1))
-#define WAM_GRID_X ((SCREENWIDTH - WAM_GRID_W) / 2)
-#define WAM_GRID_Y 78
+#define WAM_MOLE_VARIANTS 10
+#define WAM_MOLE_SIZE 44
+#define WAM_MAX_ACTIVE_MOLES 3
 #define WAM_ROUND_MS 30000
-#define WAM_MOLE_VISIBLE_MIN_MS 600
-#define WAM_MOLE_VISIBLE_MAX_MS 1400
-#define WAM_SPAWN_MIN_MS 400
-#define WAM_SPAWN_MAX_MS 900
+
+// Keep moles fully on screen and clear of the wooden HUD sign (which starts
+// around y=277 in the 240x320 background).
+#define WAM_PLAY_TOP_Y 4
+#define WAM_PLAY_BOTTOM_Y 266
+
+#define WAM_MAX_LEVEL 5
+#define WAM_HITS_PER_LEVEL 4
+#define WAM_POINTS_PER_HIT 10
+#define WAM_LEVEL_UP_MS 1100
+
+static const int WAM_VISIBLE_MIN_MS[WAM_MAX_LEVEL] = { 650, 560, 480, 410, 350 };
+static const int WAM_VISIBLE_MAX_MS[WAM_MAX_LEVEL] = { 1450, 1250, 1050, 900, 750 };
+static const int WAM_SPAWN_MIN_MS[WAM_MAX_LEVEL]   = { 380, 330, 290, 250, 220 };
+static const int WAM_SPAWN_MAX_MS[WAM_MAX_LEVEL]   = { 850, 740, 640, 550, 470 };
+
+// Each mole additionally gets its own random "speed" on top of the level's
+// base timing, so how long any given mole stays up is unpredictable rather
+// than a fixed range per level - some flash by fast, some linger a bit.
+#define WAM_SPEED_FACTOR_MIN_PCT 60
+#define WAM_SPEED_FACTOR_MAX_PCT 150
+#define WAM_MIN_VISIBLE_MS 220
+
+// Digit-field centers/widths measured against the baked-in wooden sign art.
+#define WAM_HUD_DIGIT_CY 299
+#define WAM_HUD_FIELD_H 20
+#define WAM_HUD_TIME_CX 49
+#define WAM_HUD_TIME_W 28
+#define WAM_HUD_SCORE_CX 116
+#define WAM_HUD_SCORE_W 40
+#define WAM_HUD_HITS_CX 179
+#define WAM_HUD_HITS_W 28
+
+#define WAM_BANNER_POOL 12
 
 enum WhackAMoleState {
   WAM_STATE_READY,
@@ -29,9 +61,8 @@ enum WhackAMoleState {
   WAM_STATE_ENDED
 };
 
-struct MoleHole {
-  int16_t x;
-  int16_t y;
+struct MoleSlot {
+  Avatar *avatar;
   bool active;
   unsigned long hideAtMs;
 };
@@ -54,7 +85,7 @@ class Scene_WhackAMole : public GameScene {
 
       if (state == WAM_STATE_ENDED) {
         if (isTouching && !wasTouching) {
-          resetGame();
+          resetRound();
         }
         wasTouching = isTouching;
         return;
@@ -69,6 +100,7 @@ class Scene_WhackAMole : public GameScene {
       }
 
       updateMoles(now);
+      updateLevelUpBanner(now);
       trySpawnMole(now);
 
       if (now >= roundEndMs) {
@@ -81,267 +113,321 @@ class Scene_WhackAMole : public GameScene {
         uint16_t touchX = 0;
         uint16_t touchY = 0;
         if (getTouchPoint(_tft, &touchX, &touchY)) {
-          whackAt(touchX, touchY);
+          whackAt(touchX, touchY, now);
         }
       }
 
       int timeLeft = (roundEndMs > now) ? (int)((roundEndMs - now) / 1000) : 0;
-      if (timeLeft != lastHudTimeLeft || score != lastHudScore) {
-        drawHud(timeLeft, score);
+      if (timeLeft != lastHudTimeLeft) {
+        drawHudField(WAM_HUD_TIME_CX, WAM_HUD_TIME_W, timeLeft, 2);
         lastHudTimeLeft = timeLeft;
-        lastHudScore = score;
       }
 
       wasTouching = isTouching;
     }
 
-    void render() {}
+    void render() {
+      renderScene();
+    }
 
     void initScene() {
+      setBackground(whackamole_bg);
+
+      SpriteSheet moleSheet = sootSheet();
+      for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
+        SpriteSheetRegion region = SpriteSheet::readRegion(sprite_soot_moleRegions, 0);
+        slots[i].avatar = moleSheet.createAvatar(-100, -100, region);
+        slots[i].active = false;
+        slots[i].hideAtMs = 0;
+        appendAvatar(slots[i].avatar);
+      }
+
+      initBannerPool();
+
       wasTouching = false;
       suppressTouchUntilMs = millis() + 400;
-      initHoles();
-      resetGame();
+      resetRound();
     }
 
     void destroyScene() {
+      for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
+        slots[i].avatar = NULL;
+      }
+      for (int i = 0; i < WAM_BANNER_POOL; i++) {
+        bannerGlyphs[i] = NULL;
+      }
       wasTouching = false;
       GameScene::destroyScene();
     }
 
   private:
-    MoleHole holes[WAM_HOLE_COUNT];
+    MoleSlot slots[WAM_MAX_ACTIVE_MOLES];
+    Avatar *bannerGlyphs[WAM_BANNER_POOL];
+    int bannerActiveCount = 0;
+
     WhackAMoleState state = WAM_STATE_READY;
     unsigned long stateStartMs = 0;
     unsigned long roundEndMs = 0;
     unsigned long nextSpawnMs = 0;
+
     int score = 0;
+    int hits = 0;
+    int level = 1;
+    bool levelUpVisible = false;
+    unsigned long levelUpClearAtMs = 0;
+
     int lastHudTimeLeft = -1;
-    int lastHudScore = -1;
     boolean wasTouching = false;
     unsigned long suppressTouchUntilMs = 0;
 
-    uint16_t colorBg() const { return rgb565(34, 52, 34); }
-    uint16_t colorGrass() const { return rgb565(56, 110, 56); }
-    uint16_t colorHole() const { return rgb565(45, 30, 18); }
-    uint16_t colorMole() const { return rgb565(120, 80, 50); }
-    uint16_t colorNose() const { return rgb565(220, 120, 100); }
-    uint16_t colorDim() const { return rgb565(180, 200, 170); }
+    uint16_t colorWoodBg() const { return rgb565(147, 100, 37); }
+    uint16_t colorGold() const { return rgb565(214, 163, 80); }
 
-    void initHoles() {
-      for (int row = 0; row < WAM_GRID_ROWS; row++) {
-        for (int col = 0; col < WAM_GRID_COLS; col++) {
-          int index = row * WAM_GRID_COLS + col;
-          holes[index].x = WAM_GRID_X + col * (WAM_HOLE_SIZE + WAM_HOLE_GAP);
-          holes[index].y = WAM_GRID_Y + row * (WAM_HOLE_SIZE + WAM_HOLE_GAP);
-          holes[index].active = false;
-          holes[index].hideAtMs = 0;
+    SpriteSheet sootSheet() const {
+      return SpriteSheet(sprite_soot_mole, sprite_soot_moleMask, SPRITE_SOOT_MOLE_WIDTH, SPRITE_SOOT_MOLE_HEIGHT);
+    }
+
+    void initBannerPool() {
+      SpriteSheet sheet = SpriteText::letterSheet();
+      SpriteSheetRegion placeholder = SpriteSheet::readRegion(sprite_lettersRegions, 0);
+      for (int i = 0; i < WAM_BANNER_POOL; i++) {
+        bannerGlyphs[i] = sheet.createAvatar(-100, -100, placeholder);
+        appendAvatar(bannerGlyphs[i]);
+      }
+      bannerActiveCount = 0;
+    }
+
+    void showBanner(const char *text, int y) {
+      SpriteSheet sheet = SpriteText::letterSheet();
+      int width = SpriteText::measureWidth(text);
+      int cursor = (SCREENWIDTH - width) / 2;
+      int count = 0;
+
+      for (const char *p = text; *p != '\0' && count < WAM_BANNER_POOL; ++p) {
+        if (*p == ' ') {
+          cursor += SPRITE_LETTERS_CELL_W / 2;
+          continue;
         }
+        int index = SpriteText::letterRegionIndex(*p);
+        if (index < 0) {
+          continue;
+        }
+        SpriteSheetRegion region = SpriteSheet::readRegion(sprite_lettersRegions, index);
+        sheet.applyRegion(bannerGlyphs[count], region);
+        bannerGlyphs[count]->setPos(cursor, y);
+        bannerGlyphs[count]->requestRedraw();
+        count++;
+        cursor += SPRITE_LETTERS_CELL_W + 2;
+      }
+
+      for (int i = count; i < WAM_BANNER_POOL; i++) {
+        if (bannerGlyphs[i]->x >= 0) {
+          bannerGlyphs[i]->setPos(-100, -100);
+        }
+      }
+
+      bannerActiveCount = count;
+      requestRender();
+    }
+
+    void hideBanner() {
+      for (int i = 0; i < WAM_BANNER_POOL; i++) {
+        bannerGlyphs[i]->setPos(-100, -100);
+      }
+      bannerActiveCount = 0;
+      requestRender();
+    }
+
+    void hideAllMoles() {
+      for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
+        slots[i].active = false;
+        slots[i].hideAtMs = 0;
+        slots[i].avatar->setPos(-100, -100);
       }
     }
 
-    void resetGame() {
+    void resetRound() {
       score = 0;
+      hits = 0;
+      level = 1;
+      levelUpVisible = false;
+      levelUpClearAtMs = 0;
       state = WAM_STATE_READY;
       stateStartMs = millis();
       roundEndMs = 0;
       nextSpawnMs = 0;
       lastHudTimeLeft = -1;
-      lastHudScore = -1;
 
-      for (int i = 0; i < WAM_HOLE_COUNT; i++) {
-        holes[i].active = false;
-        holes[i].hideAtMs = 0;
-      }
+      hideAllMoles();
+      hideBanner();
+      renderFullScreen();
 
-      drawScreen();
+      drawHudField(WAM_HUD_TIME_CX, WAM_HUD_TIME_W, WAM_ROUND_MS / 1000, 2);
+      drawHudField(WAM_HUD_SCORE_CX, WAM_HUD_SCORE_W, 0, 3);
+      drawHudField(WAM_HUD_HITS_CX, WAM_HUD_HITS_W, 0, 2);
+
+      showBanner("GET READY", 130);
+      requestRender();
     }
 
     void beginPlay(unsigned long now) {
       state = WAM_STATE_PLAYING;
       stateStartMs = now;
       roundEndMs = now + WAM_ROUND_MS;
-      nextSpawnMs = now + 500;
+      nextSpawnMs = now + 400;
       lastHudTimeLeft = -1;
-      lastHudScore = -1;
-      drawHud(WAM_ROUND_MS / 1000, 0);
+      hideBanner();
       addSound(NOTE_C5, noteDurationMs(8, 800));
+    }
+
+    int levelForHits(int forHits) const {
+      int lvl = 1 + forHits / WAM_HITS_PER_LEVEL;
+      return lvl > WAM_MAX_LEVEL ? WAM_MAX_LEVEL : lvl;
     }
 
     void endRound() {
       state = WAM_STATE_ENDED;
+      hideAllMoles();
+      showBanner("TIME UP", 130);
 
-      for (int i = 0; i < WAM_HOLE_COUNT; i++) {
-        if (holes[i].active) {
-          holes[i].active = false;
-          drawHole(i);
-        }
-      }
+      char buf[40];
+      _tft->fillRoundRect(20, 188, SCREENWIDTH - 40, 48, 6, colorWoodBg());
+      _tft->setTextDatum(MC_DATUM);
+      _tft->setTextColor(colorGold(), colorWoodBg());
+      snprintf(buf, sizeof(buf), "Score %d  Hits %d  Lv %d", score, hits, level);
+      _tft->drawString(buf, SCREENWIDTH / 2, 204, 2);
+      _tft->drawString("Tap to play again", SCREENWIDTH / 2, 224, 2);
+      _tft->setTextDatum(TL_DATUM);
 
-      drawStatus("TIME UP!");
-      drawFooter("Home = Back");
       addSound(NOTE_G4, noteDurationMs(8, 700));
       addSound(NOTE_E4, noteDurationMs(8, 700));
+      requestRender();
     }
 
     void updateMoles(unsigned long now) {
-      for (int i = 0; i < WAM_HOLE_COUNT; i++) {
-        if (holes[i].active && now >= holes[i].hideAtMs) {
-          holes[i].active = false;
-          drawHole(i);
+      for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
+        if (slots[i].active && now >= slots[i].hideAtMs) {
+          slots[i].active = false;
+          slots[i].avatar->setPos(-100, -100);
+          requestRender();
         }
       }
+    }
+
+    void updateLevelUpBanner(unsigned long now) {
+      if (levelUpVisible && now >= levelUpClearAtMs) {
+        levelUpVisible = false;
+        hideBanner();
+      }
+    }
+
+    bool overlapsActiveMole(int16_t x, int16_t y, int exceptIndex) {
+      for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
+        if (i == exceptIndex || !slots[i].active) {
+          continue;
+        }
+        if (x < slots[i].avatar->x + WAM_MOLE_SIZE && x + WAM_MOLE_SIZE > slots[i].avatar->x &&
+            y < slots[i].avatar->y + WAM_MOLE_SIZE && y + WAM_MOLE_SIZE > slots[i].avatar->y) {
+          return true;
+        }
+      }
+      return false;
     }
 
     void trySpawnMole(unsigned long now) {
-      if (now < nextSpawnMs) {
+      if (now < nextSpawnMs || levelUpVisible) {
         return;
       }
 
-      int open[WAM_HOLE_COUNT];
-      int openCount = 0;
-      for (int i = 0; i < WAM_HOLE_COUNT; i++) {
-        if (!holes[i].active) {
-          open[openCount++] = i;
+      int slotIndex = -1;
+      for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
+        if (!slots[i].active) {
+          slotIndex = i;
+          break;
         }
       }
-
-      if (openCount > 0) {
-        int index = open[random(0, openCount)];
-        holes[index].active = true;
-        holes[index].hideAtMs = now + random(WAM_MOLE_VISIBLE_MIN_MS, WAM_MOLE_VISIBLE_MAX_MS);
-        drawMole(index);
-      }
-
-      nextSpawnMs = now + random(WAM_SPAWN_MIN_MS, WAM_SPAWN_MAX_MS);
-    }
-
-    int holeAt(uint16_t x, uint16_t y) const {
-      for (int i = 0; i < WAM_HOLE_COUNT; i++) {
-        const MoleHole &hole = holes[i];
-        if (x >= hole.x && x < hole.x + WAM_HOLE_SIZE &&
-            y >= hole.y && y < hole.y + WAM_HOLE_SIZE) {
-          return i;
-        }
-      }
-      return -1;
-    }
-
-    void whackAt(uint16_t x, uint16_t y) {
-      int index = holeAt(x, y);
-      if (index < 0) {
+      if (slotIndex < 0) {
         return;
       }
 
-      if (holes[index].active) {
-        holes[index].active = false;
-        score++;
-        drawHole(index);
-        drawWhackFlash(index);
+      int lvl = level - 1;
+      int16_t x = 0, y = 0;
+      for (int attempt = 0; attempt < 6; attempt++) {
+        x = random(0, SCREENWIDTH - WAM_MOLE_SIZE);
+        y = random(WAM_PLAY_TOP_Y, WAM_PLAY_BOTTOM_Y - WAM_MOLE_SIZE);
+        if (!overlapsActiveMole(x, y, slotIndex)) {
+          break;
+        }
+      }
+
+      int variant = random(0, WAM_MOLE_VARIANTS);
+      SpriteSheetRegion region = SpriteSheet::readRegion(sprite_soot_moleRegions, variant);
+      SpriteSheet moleSheet = sootSheet();
+      moleSheet.applyRegion(slots[slotIndex].avatar, region);
+      slots[slotIndex].avatar->setPos(x, y);
+      slots[slotIndex].avatar->requestRedraw();
+      slots[slotIndex].active = true;
+
+      int baseVisibleMs = random(WAM_VISIBLE_MIN_MS[lvl], WAM_VISIBLE_MAX_MS[lvl]);
+      int speedPct = random(WAM_SPEED_FACTOR_MIN_PCT, WAM_SPEED_FACTOR_MAX_PCT + 1);
+      int visibleMs = (baseVisibleMs * speedPct) / 100;
+      if (visibleMs < WAM_MIN_VISIBLE_MS) {
+        visibleMs = WAM_MIN_VISIBLE_MS;
+      }
+      slots[slotIndex].hideAtMs = now + visibleMs;
+      requestRender();
+
+      nextSpawnMs = now + random(WAM_SPAWN_MIN_MS[lvl], WAM_SPAWN_MAX_MS[lvl]);
+    }
+
+    void whackAt(uint16_t x, uint16_t y, unsigned long now) {
+      for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
+        if (!slots[i].active) {
+          continue;
+        }
+        if (!slots[i].avatar->contains(x, y)) {
+          continue;
+        }
+
+        slots[i].active = false;
+        slots[i].avatar->setPos(-100, -100);
+        requestRender();
+
+        hits++;
+        score += WAM_POINTS_PER_HIT * level;
+        drawHudField(WAM_HUD_SCORE_CX, WAM_HUD_SCORE_W, score > 999 ? 999 : score, 3);
+        drawHudField(WAM_HUD_HITS_CX, WAM_HUD_HITS_W, hits > 99 ? 99 : hits, 2);
         addSound(NOTE_E5, noteDurationMs(16, 900));
         addSound(NOTE_G5, noteDurationMs(32, 900));
+
+        int newLevel = levelForHits(hits);
+        if (newLevel > level) {
+          level = newLevel;
+          showBanner("LEVEL UP", 130);
+          levelUpVisible = true;
+          levelUpClearAtMs = now + WAM_LEVEL_UP_MS;
+          addSound(NOTE_C5, noteDurationMs(16, 900));
+          addSound(NOTE_C6, noteDurationMs(8, 900));
+        }
+        return;
+      }
+
+      addSound(NOTE_A3, noteDurationMs(32, 700));
+    }
+
+    void drawHudField(int centerX, int width, int value, int digits) {
+      char buf[8];
+      if (digits == 3) {
+        snprintf(buf, sizeof(buf), "%03d", value);
       } else {
-        addSound(NOTE_A3, noteDurationMs(32, 700));
+        snprintf(buf, sizeof(buf), "%02d", value);
       }
-    }
 
-    void drawScreen() {
-      uint16_t bg = colorBg();
-      setBackgroundColor(bg);
-      _tft->fillScreen(bg);
-
-      _tft->fillRect(0, WAM_GRID_Y - 16, SCREENWIDTH, WAM_GRID_H() + 32, colorGrass());
-
+      _tft->fillRect(centerX - width / 2, WAM_HUD_DIGIT_CY - WAM_HUD_FIELD_H / 2, width, WAM_HUD_FIELD_H, colorWoodBg());
       _tft->setTextDatum(MC_DATUM);
-      _tft->setTextColor(TFT_WHITE, bg);
-      _tft->drawString("Whack-a-Mole", SCREENWIDTH / 2, 24, 4);
-
-      for (int i = 0; i < WAM_HOLE_COUNT; i++) {
-        drawHole(i);
-      }
-
-      drawHud(WAM_ROUND_MS / 1000, 0);
-      drawStatus("GET READY...");
-      drawFooter("Home = Back");
+      _tft->setTextColor(colorGold(), colorWoodBg());
+      _tft->drawString(buf, centerX, WAM_HUD_DIGIT_CY, 2);
       _tft->setTextDatum(TL_DATUM);
-    }
-
-    int16_t WAM_GRID_H() const {
-      return WAM_HOLE_SIZE * WAM_GRID_ROWS + WAM_HOLE_GAP * (WAM_GRID_ROWS - 1);
-    }
-
-    void drawHole(int index) {
-      const MoleHole &hole = holes[index];
-      int16_t cx = hole.x + WAM_HOLE_SIZE / 2;
-      int16_t cy = hole.y + WAM_HOLE_SIZE / 2 + 8;
-
-      _tft->fillRect(hole.x, hole.y, WAM_HOLE_SIZE, WAM_HOLE_SIZE, colorGrass());
-      _tft->fillEllipse(cx, cy, 26, 14, colorHole());
-      _tft->drawEllipse(cx, cy, 26, 14, rgb565(25, 15, 8));
-    }
-
-    void drawMole(int index) {
-      const MoleHole &hole = holes[index];
-      int16_t cx = hole.x + WAM_HOLE_SIZE / 2;
-      int16_t cy = hole.y + WAM_HOLE_SIZE / 2 - 4;
-
-      drawHole(index);
-
-      _tft->fillCircle(cx, cy, 22, colorMole());
-      _tft->drawCircle(cx, cy, 22, rgb565(80, 50, 30));
-
-      _tft->fillCircle(cx - 8, cy - 4, 4, TFT_WHITE);
-      _tft->fillCircle(cx + 8, cy - 4, 4, TFT_WHITE);
-      _tft->fillCircle(cx - 7, cy - 4, 2, TFT_BLACK);
-      _tft->fillCircle(cx + 9, cy - 4, 2, TFT_BLACK);
-
-      _tft->fillCircle(cx, cy + 6, 5, colorNose());
-    }
-
-    void drawWhackFlash(int index) {
-      const MoleHole &hole = holes[index];
-      int16_t cx = hole.x + WAM_HOLE_SIZE / 2;
-      int16_t cy = hole.y + WAM_HOLE_SIZE / 2;
-      uint16_t flash = rgb565(255, 255, 180);
-
-      for (int r = 24; r <= 28; r++) {
-        _tft->drawCircle(cx, cy, r, flash);
-      }
-    }
-
-    void drawHud(int timeLeft, int displayScore) {
-      uint16_t bg = colorBg();
-      char buf[24];
-
-      _tft->fillRect(0, 48, SCREENWIDTH, 22, bg);
-      _tft->setTextDatum(MC_DATUM);
-      _tft->setTextColor(colorDim(), bg);
-      snprintf(buf, sizeof(buf), "Time: %02d    Score: %d", timeLeft, displayScore);
-      _tft->drawString(buf, SCREENWIDTH / 2, 58, 2);
-    }
-
-    void drawStatus(const char *text) {
-      uint16_t bg = colorBg();
-      int16_t y = WAM_GRID_Y + WAM_GRID_H() + 24;
-      _tft->fillRect(0, y - 12, SCREENWIDTH, 28, bg);
-      _tft->setTextDatum(MC_DATUM);
-      _tft->setTextColor(TFT_WHITE, bg);
-      _tft->drawString(text, SCREENWIDTH / 2, y, 2);
-    }
-
-    void drawFooter(const char *text) {
-      uint16_t bg = colorBg();
-      _tft->setTextDatum(MC_DATUM);
-      _tft->setTextColor(colorDim(), bg);
-      _tft->drawString(text, SCREENWIDTH / 2, SCREENHEIGHT - 24, 2);
-
-      if (state == WAM_STATE_ENDED) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "Score: %d  Tap to replay", score);
-        _tft->drawString(buf, SCREENWIDTH / 2, SCREENHEIGHT - 44, 2);
-      } else if (state == WAM_STATE_PLAYING) {
-        _tft->drawString("Tap the moles!", SCREENWIDTH / 2, SCREENHEIGHT - 44, 2);
-      }
     }
 };
 

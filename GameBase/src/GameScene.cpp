@@ -27,6 +27,15 @@ void GameScene :: setBackground(const uint16_t* background, const uint32_t backg
   this->background = background;
   this->backgroundWidth = backgroundWidth;
   this->backgroundXOffset = 0;
+  this->backgroundTiled = false;
+}
+void GameScene :: setBackgroundTile(const uint16_t* tile, uint16_t tileWidth, uint16_t tileHeight) {
+  this->background = tile;
+  this->backgroundWidth = tileWidth;
+  this->backgroundXOffset = 0;
+  this->backgroundTiled = true;
+  this->backgroundTileWidth = tileWidth;
+  this->backgroundTileHeight = tileHeight;
 }
 void GameScene :: setBackgroundColor(const uint16_t bgColor) {
   this->bgColor = bgColor;
@@ -158,11 +167,22 @@ void GameScene :: renderFullScreen() {
   _tft->endWrite();
 
   for (int i = 0; i < numLayers; ++i) {
+    layerAvatars[i]->forceRedraw = false;
     layerAvatars[i]->savePreviousRenderPos();
   }
 }
 
 void GameScene::drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *destPtr) {
+  if (backgroundTiled && backgroundTileWidth > 0 && backgroundTileHeight > 0) {
+    uint16_t tileY = y % backgroundTileHeight;
+    uint32_t rowBase = (uint32_t)tileY * backgroundTileWidth;
+    for (uint32_t i = 0; i < width; ++i) {
+      uint16_t tileX = (uint16_t)((x + i) % backgroundTileWidth);
+      *destPtr++ = pgm_read_word_far(background + rowBase + tileX);
+    }
+    return;
+  }
+
   uint16_t c;
   uint32_t pos = getBackgoundMemoryPosition(x, y);
   if (isDebugEnabled) {
@@ -209,7 +229,8 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
 
     for (uint16_t x = 0; x < renderwidth; x++) {
       uint16_t localX = x + bitmapoffset;
-      uint16_t sheetX = avatar->sheetSrcX + localX;
+      uint16_t srcCol = avatar->flipX ? (avatar->width - 1 - localX) : localX;
+      uint16_t sheetX = avatar->sheetSrcX + srcCol;
       uint16_t sheetY = avatar->sheetSrcY + y;
       uint8_t maskByte = pgm_read_byte(avatar->sheetMask + (uint32_t)sheetY * sheetBw + (sheetX >> 3));
       if (maskByte & (0x80 >> (sheetX & 7))) {
@@ -251,6 +272,24 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
     maskByte = pgm_read_byte(&(mask[bw * y + srcStartX / 8]));
     maskoffset = srcStartX % 8;
     maskByte <<= maskoffset;
+  }
+
+  if (avatar->flipX) {
+    // Mirrored: read the source column from the opposite edge. The fast
+    // incremental mask walk below assumes left-to-right order, so sample the
+    // mask bit directly here instead.
+    const uint8_t* mask = avatar->getMask();
+    const uint16_t* bitmap = avatar->getBitmap();
+    for (uint16_t x = 0; x < renderwidth; x++) {
+      uint16_t srcCol = avatar->width - 1 - (x + bitmapoffset);
+      uint8_t mb = pgm_read_byte(&(mask[y * bw + (srcCol >> 3)]));
+      if (mb & (0x80 >> (srcCol & 7))) {
+        *destPtr++ = pgm_read_word_near(bitmap + (y * avatar->width) + srcCol);
+      } else {
+        destPtr++;
+      }
+    }
+    return;
   }
 
   for (uint16_t x = 0; x < renderwidth; x++) {
@@ -337,7 +376,11 @@ void GameScene  :: renderScene(boolean refreshBackground) {
     if (avatar->numOfFrames > 1) {
       avatar->updateFrameIndex(frameTime);
     }
-    bool frameChanged = avatar->numOfFrames > 1 && avatar->currentFrame != frameBefore;
+    // forceRedraw (from requestRedraw()) counts as a content change: repaint the
+    // avatar's current box, and if it also moved the old+new union below still
+    // covers the full swept area so no trailing pixels are left behind.
+    bool frameChanged = (avatar->numOfFrames > 1 && avatar->currentFrame != frameBefore) ||
+                        avatar->forceRedraw;
     bool positionChanged = (oldX != newX || oldY != newY);
     int16_t avatarMinx;
     int16_t avatarMiny;
@@ -572,6 +615,7 @@ void GameScene  :: renderScene(boolean refreshBackground) {
       if (renderableFullRedraw[i]) {
         renderableAvatar[i]->renderTainted = false;
       }
+      renderableAvatar[i]->forceRedraw = false;
       renderableAvatar[i]->savePreviousRenderPos();
     }
 

@@ -29,6 +29,12 @@
 #define SPRITE_DIGITS_LARGE_BASE 10
 #define PLAYER_SPEED 4.0f
 #define ENEMY_SPEED 3.0f
+#define MEI_FRAME_W 24
+#define MEI_FRAME_H 34
+#define MEI_RUN_FRAMES 6
+#define MEI_RUN_FRAME_MS 90
+// Keep Mei's feet on the same ground line as the old 48x68 sprite.
+#define PLAYER_GROUND_Y (GROUND_Y + 68 - MEI_FRAME_H)
 #define ACORN_FALL_SPEED 5.0f
 #define MAX_END_MESSAGE_GLYPHS 16
 #define END_MESSAGE_LINE1_Y 140
@@ -124,10 +130,13 @@ class Scene_AcornCatch : public GameScene {
 
       initHudAvatars();
 
-      player = new Avatar(109, GROUND_Y, SPRITE_MEI_WIDTH, SPRITE_MEI_HEIGHT, sprite_mei, sprite_meiMask);
-      player->setVelocity(0, 0);
+      player = meiSheet().createAvatar(109, PLAYER_GROUND_Y,
+                                       SpriteSheet::readRegion(sprite_meiRegions, 0));
       player->updateInterval = 50;
       appendAvatar(player);
+      meiFrame = 0;
+      meiFacingRight = true;
+      meiFrameMs = millis();
 
       enemy = new Avatar(170, GROUND_Y, SPRITE_CHU_TOTORO_WIDTH, SPRITE_CHU_TOTORO_HEIGHT, sprite_chu_totoro, sprite_chu_totoroMask);
       enemy->setVelocity(0, 0);
@@ -184,6 +193,9 @@ class Scene_AcornCatch : public GameScene {
     bool acornActive[MAX_FALLING_ACORNS];
 
     int score = 0;
+    int meiFrame = 0;
+    bool meiFacingRight = true;
+    unsigned long meiFrameMs = 0;
     AcornCatchState state = ACORN_STATE_READY;
     unsigned long stateStartMs = 0;
     unsigned long gameEndMs = 0;
@@ -201,6 +213,18 @@ class Scene_AcornCatch : public GameScene {
 
     SpriteSheet digitSheet() const {
       return SpriteSheet(sprite_digits, sprite_digitsMask, SPRITE_DIGITS_WIDTH, SPRITE_DIGITS_HEIGHT);
+    }
+
+    SpriteSheet meiSheet() const {
+      return SpriteSheet(sprite_mei, sprite_meiMask, SPRITE_MEI_WIDTH, SPRITE_MEI_HEIGHT);
+    }
+
+    // Six right-facing run frames (0..5). Left-facing is done at draw time via
+    // the Avatar's runtime horizontal flip, so no mirrored frames are stored.
+    void applyMeiFrame() {
+      player->setFlipX(!meiFacingRight);
+      meiSheet().applyRegion(player, SpriteSheet::readRegion(sprite_meiRegions, meiFrame));
+      player->requestRedraw();
     }
 
     void setHudDigit(Avatar *avatar, int digit, bool large) {
@@ -356,10 +380,13 @@ class Scene_AcornCatch : public GameScene {
 
     void updatePlayer(const GameInput &input) {
       float vx = 0;
+      bool prevFacing = meiFacingRight;
       if (input.left) {
         vx = -PLAYER_SPEED;
+        meiFacingRight = false;
       } else if (input.right) {
         vx = PLAYER_SPEED;
+        meiFacingRight = true;
       }
       player->setVelocity(vx, 0);
       player->updatePos(millis());
@@ -370,7 +397,24 @@ class Scene_AcornCatch : public GameScene {
       if (player->x + player->width > SCREENWIDTH) {
         player->x = SCREENWIDTH - player->width;
       }
-      player->y = GROUND_Y;
+      player->y = PLAYER_GROUND_Y;
+
+      unsigned long now = millis();
+      if (vx != 0) {
+        bool advance = (now - meiFrameMs) >= MEI_RUN_FRAME_MS;
+        if (advance) {
+          meiFrame = (meiFrame + 1) % MEI_RUN_FRAMES;
+          meiFrameMs = now;
+        }
+        if (advance || meiFacingRight != prevFacing) {
+          applyMeiFrame();
+          requestRender();
+        }
+      } else if (meiFrame != 0 || meiFacingRight != prevFacing) {
+        meiFrame = 0;  // settle on the first pose when standing still
+        applyMeiFrame();
+        requestRender();
+      }
     }
 
     void updateEnemy() {

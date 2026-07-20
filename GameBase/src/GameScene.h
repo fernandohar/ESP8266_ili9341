@@ -21,6 +21,10 @@ class GameScene {
 
     void setBackground(const uint16_t* background);
     void setBackground(const uint16_t* background, const uint32_t backgroundWidth);
+    // Use a small bitmap as a repeating (tiled) background: it is wrapped with
+    // modulo indexing across the whole screen in both X and Y, so a tiny tile
+    // (e.g. 50x50) can fill 240x320 without a full-screen PROGMEM image.
+    void setBackgroundTile(const uint16_t* tile, uint16_t tileWidth, uint16_t tileHeight);
     void setBackgroundColor(const uint16_t bgColor);
     void setBackgroundOffset(uint16_t imageXOffset);
     static uint16_t rgb565(float r, float g, float b) {
@@ -97,6 +101,9 @@ class GameScene {
     uint32_t backgroundWidth;
     uint16_t backgroundXOffset;
     uint16_t bgColor;
+    bool backgroundTiled = false;
+    uint16_t backgroundTileWidth = 0;
+    uint16_t backgroundTileHeight = 0;
     boolean _renderRequested = false;
 
     void drawBackground(const uint16_t* bitmap) {
