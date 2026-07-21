@@ -73,6 +73,9 @@
 #define CHU_JUMP_ALIGN_X 18
 #define CHU_JUMP_CHANCE 60
 #define CHU_JUMP_COOLDOWN_MS 900
+// Mei can jump too (Home tap). Single jump, full air control, no double jump.
+#define MEI_JUMP_V (-7.5f)
+#define MEI_GRAVITY 0.6f
 // Physics step for jump/scatter, matching the acorn fall cadence.
 #define PHYSICS_STEP_MS 50
 #define MAX_END_MESSAGE_GLYPHS 16
@@ -94,11 +97,17 @@
 #define HUD_SCORE_HUNDREDS_X (HUD_SCORE_TENS_X - HUD_SCORE_DIGIT_GAP)
 
 enum AcornCatchState {
-  ACORN_STATE_READY,
+  ACORN_STATE_INTRO,
   ACORN_STATE_PLAYING,
   ACORN_STATE_WON,
   ACORN_STATE_LOST
 };
+
+// Intro screen: pulse the "press any button" prompt on/off at this cadence.
+#define INTRO_PROMPT_BLINK_MS 500
+// Ignore button presses for a moment so the press that launched the scene from
+// the hub doesn't immediately skip the intro.
+#define INTRO_INPUT_GRACE_MS 300
 
 class Scene_AcornCatch : public GameScene {
   public:
@@ -112,7 +121,10 @@ class Scene_AcornCatch : public GameScene {
       unsigned long now = millis();
 
       if (state == ACORN_STATE_WON || state == ACORN_STATE_LOST) {
-        if (input.homePressed || input.home) {
+        // Only after the round has ended does Home return to the hub. Require a
+        // fresh press so a Home still held from a jump doesn't skip the end
+        // screen instantly.
+        if (input.homePressed) {
           *needChangeScene = true;
           *nextSceneIndex = 0;
           return;
@@ -120,18 +132,25 @@ class Scene_AcornCatch : public GameScene {
         return;
       }
 
-      if (input.homePressed && state == ACORN_STATE_PLAYING) {
-        *needChangeScene = true;
-        *nextSceneIndex = 0;
+      if (state == ACORN_STATE_INTRO) {
+        // Any button starts the game once the initial grace window has passed.
+        if ((now - stateStartMs) > INTRO_INPUT_GRACE_MS &&
+            (input.leftPressed || input.rightPressed || input.homePressed)) {
+          startGame(now);
+          return;
+        }
+        if ((now - introBlinkMs) > INTRO_PROMPT_BLINK_MS) {
+          introBlinkMs = now;
+          introPromptVisible = !introPromptVisible;
+          drawIntroPrompt(introPromptVisible);
+        }
         return;
       }
 
-      if (state == ACORN_STATE_READY) {
-        updateHudAvatars(now);
-        if (now - stateStartMs > 800) {
-          beginPlay(now);
-        }
-        return;
+      // During gameplay Home only makes Mei jump; it never exits to the hub
+      // (the round can only be left once it is won or lost).
+      if (input.homePressed) {
+        tryPlayerJump(now);
       }
 
       bool step = false;
@@ -141,6 +160,7 @@ class Scene_AcornCatch : public GameScene {
       }
 
       updatePlayer(input);
+      updatePlayerJump(step);
       updateEnemy(now, step);
       updateAcorns(now);
       updateSoot(now);
@@ -168,6 +188,11 @@ class Scene_AcornCatch : public GameScene {
     }
 
     void render() {
+      // The intro is a static screen drawn directly to the TFT; the avatar
+      // renderer is idle until the game actually starts.
+      if (state == ACORN_STATE_INTRO) {
+        return;
+      }
       renderScene();
     }
 
@@ -222,18 +247,23 @@ class Scene_AcornCatch : public GameScene {
       chuJumpVx = 0;
       chuY = GROUND_Y;
       lastChuJumpMs = 0;
+      meiJumping = false;
+      meiVy = 0;
+      meiY = PLAYER_GROUND_Y;
+      lastMeiJumpMs = 0;
       nextSootMs = 0;
       nextStepMs = 0;
 
       score = 0;
       caughtCount = 0;
-      state = ACORN_STATE_READY;
+      state = ACORN_STATE_INTRO;
       stateStartMs = millis();
+      introBlinkMs = stateStartMs;
+      introPromptVisible = true;
       nextSpawnMs = 0;
       clearEndMessageAvatars();
       resetHudCache();
-      updateHudAvatars(millis());
-      renderFullScreen();
+      drawIntro();
     }
 
     void destroyScene() {
@@ -281,6 +311,10 @@ class Scene_AcornCatch : public GameScene {
     float chuJumpVx = 0;
     float chuY = GROUND_Y;
     unsigned long lastChuJumpMs = 0;
+    bool meiJumping = false;
+    float meiVy = 0;
+    float meiY = PLAYER_GROUND_Y;
+    unsigned long lastMeiJumpMs = 0;
     Avatar *hudWatch = NULL;
     Avatar *hudTimeTens = NULL;
     Avatar *hudTimeOnes = NULL;
@@ -295,8 +329,10 @@ class Scene_AcornCatch : public GameScene {
     int meiFrame = 0;
     bool meiFacingRight = true;
     unsigned long meiFrameMs = 0;
-    AcornCatchState state = ACORN_STATE_READY;
+    AcornCatchState state = ACORN_STATE_INTRO;
     unsigned long stateStartMs = 0;
+    unsigned long introBlinkMs = 0;
+    bool introPromptVisible = true;
     unsigned long gameEndMs = 0;
     unsigned long nextSpawnMs = 0;
     int lastHudTimeLeft = -1;
@@ -379,8 +415,6 @@ class Scene_AcornCatch : public GameScene {
       int timeLeft = 0;
       if (state == ACORN_STATE_PLAYING) {
         timeLeft = (gameEndMs > now) ? (int)((gameEndMs - now) / 1000) : 0;
-      } else if (state == ACORN_STATE_READY) {
-        timeLeft = ACORN_CATCH_TIME_MS / 1000;
       }
 
       int displayScore = score > 999 ? 999 : score;
@@ -397,6 +431,57 @@ class Scene_AcornCatch : public GameScene {
       lastHudTimeLeft = timeLeft;
       lastHudScore = displayScore;
       requestRender();
+    }
+
+    // Instruction screen shown before play. Drawn once with the built-in TFT
+    // font (the sprite/avatar renderer stays idle until startGame()).
+    void drawIntro() {
+      uint16_t bg = rgb565(34, 60, 40);      // forest green
+      uint16_t panel = rgb565(24, 44, 30);
+      uint16_t border = rgb565(120, 160, 120);
+      setBackgroundColor(bg);
+      _tft->fillScreen(bg);
+
+      _tft->setTextDatum(MC_DATUM);
+      _tft->setTextColor(rgb565(240, 220, 120), bg);
+      _tft->drawString("ACORN CATCH", SCREENWIDTH / 2, 42, 4);
+
+      _tft->fillRoundRect(18, 84, SCREENWIDTH - 36, 150, 10, panel);
+      _tft->drawRoundRect(18, 84, SCREENWIDTH - 36, 150, 10, border);
+
+      char line[24];
+      snprintf(line, sizeof(line), "Collect %d acorns", ACORN_CATCH_TARGET);
+      _tft->setTextColor(TFT_WHITE, panel);
+      _tft->drawString(line, SCREENWIDTH / 2, 108, 2);
+      _tft->setTextColor(rgb565(230, 130, 130), panel);
+      _tft->drawString("Avoid the soot", SCREENWIDTH / 2, 136, 2);
+      _tft->setTextColor(rgb565(200, 220, 255), panel);
+      _tft->drawString("LEFT / RIGHT to move", SCREENWIDTH / 2, 172, 2);
+      _tft->setTextColor(rgb565(180, 240, 180), panel);
+      _tft->drawString("HOME to jump", SCREENWIDTH / 2, 204, 2);
+
+      _tft->setTextDatum(TL_DATUM);
+
+      introPromptVisible = true;
+      drawIntroPrompt(true);
+    }
+
+    // Blinking "press any button" prompt near the bottom of the intro screen.
+    void drawIntroPrompt(bool visible) {
+      uint16_t bg = rgb565(34, 60, 40);
+      _tft->setTextDatum(MC_DATUM);
+      _tft->setTextColor(visible ? rgb565(245, 245, 170) : bg, bg);
+      _tft->drawString("Press any button to start", SCREENWIDTH / 2, 276, 2);
+      _tft->setTextDatum(TL_DATUM);
+    }
+
+    // Leave the intro screen and start the actual round.
+    void startGame(unsigned long now) {
+      drawBackground(acorn_catch_bg);
+      resetHudCache();
+      beginPlay(now);
+      updateHudAvatars(now);
+      renderFullScreen();
     }
 
     void beginPlay(unsigned long now) {
@@ -464,6 +549,10 @@ class Scene_AcornCatch : public GameScene {
       chuVy = 0;
       chuY = GROUND_Y;
       enemy->y = GROUND_Y;
+      meiJumping = false;
+      meiVy = 0;
+      meiY = PLAYER_GROUND_Y;
+      player->y = PLAYER_GROUND_Y;
     }
 
     void clearEndMessageAvatars() {
@@ -520,7 +609,9 @@ class Scene_AcornCatch : public GameScene {
       if (player->x + player->width > SCREENWIDTH) {
         player->x = SCREENWIDTH - player->width;
       }
-      player->y = PLAYER_GROUND_Y;
+      if (!meiJumping) {
+        player->y = PLAYER_GROUND_Y;  // vertical is owned by updatePlayerJump while airborne
+      }
 
       unsigned long now = millis();
       if (vx != 0) {
@@ -538,6 +629,37 @@ class Scene_AcornCatch : public GameScene {
         applyMeiFrame();
         requestRender();
       }
+    }
+
+    // Start a single jump from the ground. No double jump: ignored while airborne.
+    void tryPlayerJump(unsigned long now) {
+      if (meiJumping || player == NULL) {
+        return;
+      }
+      meiJumping = true;
+      meiVy = MEI_JUMP_V;
+      meiY = player->y;
+      lastMeiJumpMs = now;
+      addSound(NOTE_C5, noteDurationMs(16, 900));
+    }
+
+    // Integrate Mei's jump arc on physics steps; full horizontal air control is
+    // handled separately in updatePlayer().
+    void updatePlayerJump(bool step) {
+      if (!meiJumping || player == NULL) {
+        return;
+      }
+      if (step) {
+        meiY += meiVy;
+        meiVy += MEI_GRAVITY;
+        if (meiY >= PLAYER_GROUND_Y) {
+          meiY = PLAYER_GROUND_Y;
+          meiJumping = false;
+          meiVy = 0;
+        }
+      }
+      player->y = meiY;
+      requestRender();
     }
 
     void updateEnemy(unsigned long now, bool step) {
@@ -687,8 +809,9 @@ class Scene_AcornCatch : public GameScene {
         }
         soots[i]->setVelocity(0, sootSpeed[i]);
         soots[i]->updatePos(now);
-        // Disappear once most of the soot is below Mei's feet line.
-        float feetY = player->y + player->height;
+        // Disappear once most of the soot is below Mei's feet line. Use the
+        // fixed ground line (not Mei's live Y) so a jump can't clear soot early.
+        float feetY = (float)PLAYER_GROUND_Y + player->height;
         float clearY = feetY - (1.0f - SOOT_CLEAR_BELOW_FEET) * SOOT_SIZE;
         if (soots[i]->y >= clearY || soots[i]->y > SCREENHEIGHT) {
           deactivateSoot(i);
