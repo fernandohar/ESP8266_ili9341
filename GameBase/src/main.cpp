@@ -105,9 +105,6 @@ bool isTouching() {
   currentTouchY = y;
   currentTouchValid = true;
 
-  // Temporary: stream touch coords over serial so we can check calibration/flakiness.
-  Serial.printf("touch: %u, %u\n", x, y);
-
   return true;
 }
 #endif

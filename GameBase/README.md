@@ -1,9 +1,19 @@
 # GameBase (ESP32 + ILI9341)
 
 A small handheld-style game console running on an ESP32 with a 240x320 ILI9341
-TFT display and an XPT2046 resistive touch panel. It includes a hub menu, a
-"Pet Totoro" scene, an "Acorn Catch" mini-game, and a Settings screen with touch
-calibration.
+TFT display and an XPT2046 resistive touch panel. A map-style **hub** menu
+launches four mini-games plus a Settings screen with touch calibration.
+
+## Scenes
+
+| Scene | What it is |
+|-------|------------|
+| **Hub** | Illustrated map menu; select a location with Left/Right + Home, or tap it. All games return here via **Home**. |
+| **Pet Totoro** | Virtual pet: walk Totoro around, clean up soot, and manage stats that decay over time. |
+| **Acorn Catch** | Catch falling acorns before Chu (the rival) grabs them; dodge falling soot; acorns speed up over time and the clock extends as you collect. Reach the target to win. |
+| **Tic-Tac-Toe** | Play 1P vs. a blocking/winning CPU or 2P hot-seat, on a grass board with Mei/Cat-Bus tokens. |
+| **Whack-a-Mole** | Timed rounds: tap the soot-moles as they pop up across five levels. |
+| **Settings** | Touch calibration (see below). |
 
 > For contributors / AI agents: see [`AGENTS.md`](AGENTS.md) for the asset
 > (sprite/background) generation pipeline and the rendering rules

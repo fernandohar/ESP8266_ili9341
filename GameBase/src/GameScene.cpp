@@ -2,7 +2,6 @@
 #include "SoundPlayer.h"
 
 #define min(X, Y) (((X)<(Y))?(X):(Y))
-#define DEBUG
 
 void GameScene :: destroyScene() {
   numAvatar = 0;

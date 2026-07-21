@@ -34,8 +34,6 @@
 #define MEI_FRAME_H 34
 #define MEI_RUN_FRAMES 6
 #define MEI_RUN_FRAME_MS 90
-// Keep Mei's feet on the same ground line as the old 48x68 sprite.
-//#define PLAYER_GROUND_Y (GROUND_Y + 68 - MEI_FRAME_H)
 #define PLAYER_GROUND_Y (GROUND_Y - 8)
 #define ACORN_FALL_SPEED 5.0f
 // Each falling acorn gets a random constant speed in this range (px per 50ms).
