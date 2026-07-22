@@ -78,8 +78,12 @@ build `-e esp32-wroom` before starting the simulator.
 
 ## Wiring — Display (ILI9341 + XPT2046)
 
-The display and the touch controller **share the same SPI bus** (SCK / MOSI /
-MISO). Only the chip-select lines differ: `CS` for the display, `T_CS` for touch.
+The display and the touch controller **share the SPI clock and MOSI** (`SCK` /
+`MOSI`). Only the chip-select lines differ: `CS` for the display, `T_CS` for touch.
+
+> **⚠️ Do NOT connect the LCD's `SDO`/`MISO` pin.** `GPIO19` (MISO) is used by the
+> **touch controller only** (`T_DO`). Wiring the LCD `SDO` here breaks touch — see
+> the [MISO note](#miso-warning) below.
 
 ![Display wiring: ESP32 to ILI9341 + XPT2046](docs/images/wiring_display.png)
 
@@ -92,17 +96,25 @@ MISO). Only the chip-select lines differ: `CS` for the display, `T_CS` for touch
 | GND              | GND        | —            | black           |
 | SCK              | GPIO18     | `TFT_SCLK`   | yellow (shared) |
 | SDI (MOSI)       | GPIO23     | `TFT_MOSI`   | green  (shared) |
-| SDO (MISO)       | GPIO19     | `TFT_MISO`   | blue   (shared) |
+| SDO (MISO)       | **DO NOT CONNECT** | `TFT_MISO` | — (see note) |
 | CS               | GPIO5      | `TFT_CS`     | orange          |
 | DC               | GPIO2      | `TFT_DC`     | purple          |
 | RESET            | GPIO4      | `TFT_RST`    | white           |
 | T_CLK            | GPIO18     | (shared SCK) | yellow (shared) |
 | T_DIN (MOSI)     | GPIO23     | (shared MOSI)| green  (shared) |
-| T_DO  (MISO)     | GPIO19     | (shared MISO)| blue   (shared) |
+| T_DO  (MISO)     | GPIO19     | `TFT_MISO`   | blue (touch only) |
 | T_CS             | GPIO15     | `TOUCH_CS`   | gray            |
 | T_IRQ            | *not connected* | —       | —               |
 
 Notes:
+- <a id="miso-warning"></a>**Do NOT connect the LCD's `SDO`/`MISO` pin.** `GPIO19`
+  is wired to the touch controller's `T_DO` **only**. Most ILI9341 modules do not
+  tri-state the LCD `SDO` output when the LCD is deselected, so if the LCD `SDO` is
+  also wired to `GPIO19` it fights the XPT2046 on every touch read: the panel still
+  draws fine, but touch reads come back as garbage (low `Z`, pinned `X`/`Y`) and
+  touch appears completely dead. The firmware never reads pixels back from the
+  panel, so the LCD `MISO` line is not needed. **This is the #1 cause of "touch
+  stopped working" after rewiring.**
 - `T_IRQ` is left unconnected. Touch is polled via TFT_eSPI `getTouch()`, so the
   interrupt line is not required.
 - Pin numbers live in `platformio.ini` under `[env:esp32-hw]` `build_flags`.
