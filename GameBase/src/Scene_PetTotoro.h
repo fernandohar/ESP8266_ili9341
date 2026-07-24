@@ -8,8 +8,10 @@
 #include "SpriteSheet.h"
 #include "SpriteText.h"
 #include "TouchInput.h"
-#include "image_pet_totoro_bg.h"
-#include "sprite_chu_totoro.h"
+#include "image_acorn_catch_bg.h"
+#include "sprite_totoro_baby.h"
+#include "sprite_totoro_junior.h"
+#include "sprite_totoro_adult.h"
 #include "sprite_soot.h"
 #include "sprite_letters.h"
 
@@ -32,8 +34,30 @@
 #define PET_SOOT_SPAWN_MIN_MS 18000
 #define PET_SOOT_SPAWN_MAX_MS 36000
 #define PET_SOOT_VARIANT_COUNT 16
-#define PET_WALK_DECISION_MIN_MS 1800
-#define PET_WALK_DECISION_MAX_MS 4200
+// Totoro sprite-sheet region order (shared by baby/junior/adult sheets).
+#define TOTORO_RGN_WALK_A 0
+#define TOTORO_RGN_WALK_B 1
+#define TOTORO_RGN_SIT 2
+#define TOTORO_RGN_STAND 3
+#define TOTORO_RGN_SLEEP 4
+// Posture cycling: pick a new random pose every few seconds; while walking,
+// alternate the two walk frames at this cadence.
+#define PET_POSE_MIN_MS 2500
+#define PET_POSE_MAX_MS 5000
+#define PET_WALK_FRAME_MS 220
+
+// Party mode: baby, junior and adult Totoros share the room. Each is bottom-
+// aligned to a common ground line so the different sizes stand on the same floor.
+#define PET_COUNT 3
+#define PET_GROUND_Y 300
+
+enum TotoroPose {
+  TOTORO_POSE_WALK,
+  TOTORO_POSE_SIT,
+  TOTORO_POSE_STAND,
+  TOTORO_POSE_SLEEP,
+  TOTORO_POSE_COUNT
+};
 
 enum PetRoomState {
   PET_ROOM_ACTIVE,
@@ -66,7 +90,7 @@ class Scene_PetTotoro : public GameScene {
       }
 
       tickStats(now);
-      updateWalk(now);
+      updatePose(now);
       updateSoot(now);
 
       if (isTouching && !wasTouching) {
@@ -81,9 +105,11 @@ class Scene_PetTotoro : public GameScene {
         }
       }
 
-      if (totoro != NULL) {
-        totoro->updatePos(now);
-        clampTotoro();
+      for (int i = 0; i < PET_COUNT; i++) {
+        if (pets[i].avatar != NULL) {
+          pets[i].avatar->updatePos(now);
+          clampPet(pets[i]);
+        }
       }
 
       if (!PetTotoroState::isAlive() || PetTotoroState::stats().health <= PET_STAT_MIN) {
@@ -104,8 +130,8 @@ class Scene_PetTotoro : public GameScene {
     }
 
     void initScene() {
-      setBackground(pet_totoro_bg);
-      drawBackground(pet_totoro_bg);
+      setBackground(acorn_catch_bg);
+      drawBackground(acorn_catch_bg);
 
       if (PetTotoroState::isGameOver()) {
         roomState = PET_ROOM_GAME_OVER;
@@ -113,17 +139,19 @@ class Scene_PetTotoro : public GameScene {
         roomState = PET_ROOM_ACTIVE;
       }
 
-      int16_t totoroX = (SCREENWIDTH - SPRITE_CHU_TOTORO_WIDTH) / 2;
-      totoro = new Avatar(totoroX, PET_WALK_MIN_Y, SPRITE_CHU_TOTORO_WIDTH, SPRITE_CHU_TOTORO_HEIGHT,
-                          sprite_chu_totoro, sprite_chu_totoroMask);
-      totoro->setVelocity(0, 0);
-      totoro->updateInterval = 50;
-      appendAvatar(totoro);
+      setupPet(pets[0], sprite_totoro_baby, sprite_totoro_babyMask,
+               SPRITE_TOTORO_BABY_WIDTH, SPRITE_TOTORO_BABY_HEIGHT,
+               sprite_totoro_babyRegions, 32, 32, 30);
+      setupPet(pets[1], sprite_totoro_junior, sprite_totoro_juniorMask,
+               SPRITE_TOTORO_JUNIOR_WIDTH, SPRITE_TOTORO_JUNIOR_HEIGHT,
+               sprite_totoro_juniorRegions, 44, 44, 150);
+      setupPet(pets[2], sprite_totoro_adult, sprite_totoro_adultMask,
+               SPRITE_TOTORO_ADULT_WIDTH, SPRITE_TOTORO_ADULT_HEIGHT,
+               sprite_totoro_adultRegions, 88, 88, 76);
 
       initSootPool();
       clearEndMessageAvatars();
       wasTouching = false;
-      nextWalkDecisionMs = millis() + PET_WALK_DECISION_MIN_MS;
       nextHungerTickMs = millis() + PET_HUNGER_TICK_MS;
       nextHappinessTickMs = millis() + PET_HAPPINESS_TICK_MS;
       nextHealthTickMs = millis() + PET_HEALTH_TICK_MS;
@@ -136,7 +164,9 @@ class Scene_PetTotoro : public GameScene {
       if (roomState == PET_ROOM_GAME_OVER) {
         showEndMessage("GAME OVER", "HOME");
       } else {
-        chooseNewWalk(millis());
+        for (int i = 0; i < PET_COUNT; i++) {
+          chooseNewPose(pets[i], millis());
+        }
       }
 
       renderFullScreen();
@@ -147,7 +177,9 @@ class Scene_PetTotoro : public GameScene {
     }
 
     void destroyScene() {
-      totoro = NULL;
+      for (int i = 0; i < PET_COUNT; i++) {
+        pets[i].avatar = NULL;
+      }
       for (int i = 0; i < MAX_SOOT; i++) {
         sootSlots[i].avatar = NULL;
         sootSlots[i].active = false;
@@ -163,12 +195,26 @@ class Scene_PetTotoro : public GameScene {
       int variant;
     };
 
-    Avatar *totoro = NULL;
+    struct Pet {
+      Avatar *avatar;
+      const uint16_t *bitmap;
+      const uint8_t *mask;
+      uint16_t sheetW;
+      uint16_t sheetH;
+      const SpriteSheetRegion *regions;
+      uint16_t frameW;
+      uint16_t frameH;
+      int pose;
+      unsigned long nextPoseMs;
+      unsigned long walkFrameMs;
+      bool walkFrameB;
+    };
+
+    Pet pets[PET_COUNT];
     SootSlot sootSlots[MAX_SOOT];
     boolean wasTouching = false;
     PetRoomState roomState = PET_ROOM_ACTIVE;
 
-    unsigned long nextWalkDecisionMs = 0;
     unsigned long nextHungerTickMs = 0;
     unsigned long nextHappinessTickMs = 0;
     unsigned long nextHealthTickMs = 0;
@@ -194,51 +240,105 @@ class Scene_PetTotoro : public GameScene {
       }
     }
 
-    void clampTotoro() {
-      if (totoro == NULL) {
+    void setupPet(Pet &p, const uint16_t *bitmap, const uint8_t *mask,
+                  uint16_t sheetW, uint16_t sheetH, const SpriteSheetRegion *regions,
+                  uint16_t frameW, uint16_t frameH, int16_t startX) {
+      p.bitmap = bitmap;
+      p.mask = mask;
+      p.sheetW = sheetW;
+      p.sheetH = sheetH;
+      p.regions = regions;
+      p.frameW = frameW;
+      p.frameH = frameH;
+      p.pose = TOTORO_POSE_STAND;
+      p.walkFrameB = false;
+      p.walkFrameMs = millis();
+      p.nextPoseMs = millis() + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
+      int16_t y = PET_GROUND_Y - (int16_t)frameH;  // bottom-align to shared ground line
+      SpriteSheet sheet(bitmap, mask, sheetW, sheetH);
+      p.avatar = sheet.createAvatar(startX, y, SpriteSheet::readRegion(regions, TOTORO_RGN_STAND));
+      appendAvatar(p.avatar);
+    }
+
+    void clampPet(Pet &p) {
+      if (p.avatar == NULL) {
         return;
       }
-      if (totoro->x < PET_WALK_MIN_X) {
-        totoro->x = PET_WALK_MIN_X;
-        totoro->velocity.x = fabs(totoro->velocity.x);
-        totoro->requestRedraw();
+      if (p.avatar->x < PET_WALK_MIN_X) {
+        p.avatar->x = PET_WALK_MIN_X;
+        p.avatar->velocity.x = fabs(p.avatar->velocity.x);
+        p.avatar->requestRedraw();
       }
-      if (totoro->x + totoro->width > PET_WALK_MAX_X) {
-        totoro->x = PET_WALK_MAX_X - totoro->width;
-        totoro->velocity.x = -fabs(totoro->velocity.x);
-        totoro->requestRedraw();
-      }
-      if (totoro->y < PET_WALK_MIN_Y) {
-        totoro->y = PET_WALK_MIN_Y;
-      }
-      if (totoro->y > PET_WALK_MAX_Y) {
-        totoro->y = PET_WALK_MAX_Y;
+      // Wider pets get less horizontal room; clamp against their own width.
+      float maxX = PET_WALK_MAX_X - p.avatar->width;
+      if (p.avatar->x > maxX) {
+        p.avatar->x = maxX;
+        p.avatar->velocity.x = -fabs(p.avatar->velocity.x);
+        p.avatar->requestRedraw();
       }
     }
 
-    void chooseNewWalk(unsigned long now) {
-      nextWalkDecisionMs = now + PET_WALK_DECISION_MIN_MS + random(0, PET_WALK_DECISION_MAX_MS - PET_WALK_DECISION_MIN_MS);
-      if (totoro == NULL) {
+    void applyPoseFrame(Pet &p, int regionIndex) {
+      if (p.avatar == NULL) {
         return;
       }
-
-      int action = random(0, 5);
-      if (action == 0) {
-        totoro->setVelocity(0, 0);
-      } else if (action <= 2) {
-        totoro->setVelocity(-PET_WALK_SPEED, 0);
-      } else {
-        totoro->setVelocity(PET_WALK_SPEED, 0);
-      }
-      totoro->requestRedraw();
+      SpriteSheet sheet(p.bitmap, p.mask, p.sheetW, p.sheetH);
+      sheet.applyRegion(p.avatar, SpriteSheet::readRegion(p.regions, regionIndex));
+      p.avatar->requestRedraw();
     }
 
-    void updateWalk(unsigned long now) {
-      if (totoro == NULL || roomState != PET_ROOM_ACTIVE) {
+    // Pick a random posture and hold it for a few seconds. Walking gets a random
+    // left/right velocity and animates its two frames; the other poses sit still.
+    void chooseNewPose(Pet &p, unsigned long now) {
+      p.nextPoseMs = now + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
+      if (p.avatar == NULL) {
         return;
       }
-      if (now >= nextWalkDecisionMs) {
-        chooseNewWalk(now);
+
+      p.pose = random(0, TOTORO_POSE_COUNT);
+      switch (p.pose) {
+        case TOTORO_POSE_WALK: {
+          float dir = (random(0, 2) == 0) ? -PET_WALK_SPEED : PET_WALK_SPEED;
+          p.avatar->setVelocity(dir, 0);
+          p.walkFrameB = false;
+          p.walkFrameMs = now;
+          applyPoseFrame(p, TOTORO_RGN_WALK_A);
+          break;
+        }
+        case TOTORO_POSE_SIT:
+          p.avatar->setVelocity(0, 0);
+          applyPoseFrame(p, TOTORO_RGN_SIT);
+          break;
+        case TOTORO_POSE_SLEEP:
+          p.avatar->setVelocity(0, 0);
+          applyPoseFrame(p, TOTORO_RGN_SLEEP);
+          break;
+        case TOTORO_POSE_STAND:
+        default:
+          p.avatar->setVelocity(0, 0);
+          applyPoseFrame(p, TOTORO_RGN_STAND);
+          break;
+      }
+    }
+
+    void updatePose(unsigned long now) {
+      if (roomState != PET_ROOM_ACTIVE) {
+        return;
+      }
+      for (int i = 0; i < PET_COUNT; i++) {
+        Pet &p = pets[i];
+        if (p.avatar == NULL) {
+          continue;
+        }
+        if (now >= p.nextPoseMs) {
+          chooseNewPose(p, now);
+          continue;
+        }
+        if (p.pose == TOTORO_POSE_WALK && (now - p.walkFrameMs) >= PET_WALK_FRAME_MS) {
+          p.walkFrameMs = now;
+          p.walkFrameB = !p.walkFrameB;
+          applyPoseFrame(p, p.walkFrameB ? TOTORO_RGN_WALK_B : TOTORO_RGN_WALK_A);
+        }
       }
     }
 
@@ -341,8 +441,10 @@ class Scene_PetTotoro : public GameScene {
       }
       roomState = PET_ROOM_GAME_OVER;
       PetTotoroState::markDead();
-      if (totoro != NULL) {
-        totoro->setVelocity(0, 0);
+      for (int i = 0; i < PET_COUNT; i++) {
+        if (pets[i].avatar != NULL) {
+          pets[i].avatar->setVelocity(0, 0);
+        }
       }
       showEndMessage("GAME OVER", "HOME");
       addSound(NOTE_G3, noteDurationMs(8, 500));

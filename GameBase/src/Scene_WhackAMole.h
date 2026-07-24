@@ -7,11 +7,13 @@
 #include "SpriteSheet.h"
 #include "SpriteText.h"
 #include "TouchInput.h"
-#include "image_whackamole_bg.h"
+#include "image_grass_tile.h"
 #include "sprite_soot_mole.h"
 
-// Onsen-floor background with a baked-in TIME/SCORE/HITS wooden sign at the
-// bottom; soot-sprite "moles" pop up at random spots on the tiled floor.
+// Grass tiled across the whole screen (setBackgroundTile) instead of a
+// ~150 KB full-screen image; soot-sprite "moles" pop up at random spots on the
+// grass. The TIME/SCORE/HITS wooden sign at the bottom is drawn with primitives
+// (drawHudSign) since it is no longer baked into the background.
 // Moles are real Avatars composited by renderScene() (see AGENTS.md), so
 // hiding one is just moving it off-screen - the dirty-rect renderer restores
 // the background underneath automatically.
@@ -43,7 +45,14 @@ static const int WAM_SPAWN_MAX_MS[WAM_MAX_LEVEL]   = { 850, 740, 640, 550, 470 }
 #define WAM_SPEED_FACTOR_MAX_PCT 150
 #define WAM_MIN_VISIBLE_MS 220
 
-// Digit-field centers/widths measured against the baked-in wooden sign art.
+// Wooden HUD sign drawn with primitives at the bottom (replaces the baked-in
+// sign that used to live in the full-screen background).
+#define WAM_HUD_SIGN_X 4
+#define WAM_HUD_SIGN_Y 274
+#define WAM_HUD_SIGN_W (SCREENWIDTH - 8)
+#define WAM_HUD_SIGN_H 42
+#define WAM_HUD_LABEL_CY 283
+// Digit-field centers/widths, laid out under the sign labels.
 #define WAM_HUD_DIGIT_CY 299
 #define WAM_HUD_FIELD_H 20
 #define WAM_HUD_TIME_CX 49
@@ -131,7 +140,7 @@ class Scene_WhackAMole : public GameScene {
     }
 
     void initScene() {
-      setBackground(whackamole_bg);
+      setBackgroundTile(grass_tile, GRASS_TILE_WIDTH, GRASS_TILE_HEIGHT);
 
       SpriteSheet moleSheet = sootSheet();
       for (int i = 0; i < WAM_MAX_ACTIVE_MOLES; i++) {
@@ -261,6 +270,7 @@ class Scene_WhackAMole : public GameScene {
       hideAllMoles();
       hideBanner();
       renderFullScreen();
+      drawHudSign();
 
       drawHudField(WAM_HUD_TIME_CX, WAM_HUD_TIME_W, WAM_ROUND_MS / 1000, 2);
       drawHudField(WAM_HUD_SCORE_CX, WAM_HUD_SCORE_W, 0, 3);
@@ -413,6 +423,22 @@ class Scene_WhackAMole : public GameScene {
       }
 
       addSound(NOTE_A3, noteDurationMs(32, 700));
+    }
+
+    // Wooden sign + TIME/SCORE/HITS labels, drawn once after a full repaint.
+    // Moles are constrained above it (WAM_PLAY_BOTTOM_Y), so the dirty-rect
+    // renderer never repaints over it during play.
+    void drawHudSign() {
+      uint16_t wood = colorWoodBg();
+      uint16_t border = rgb565(90, 60, 20);
+      _tft->fillRoundRect(WAM_HUD_SIGN_X, WAM_HUD_SIGN_Y, WAM_HUD_SIGN_W, WAM_HUD_SIGN_H, 6, wood);
+      _tft->drawRoundRect(WAM_HUD_SIGN_X, WAM_HUD_SIGN_Y, WAM_HUD_SIGN_W, WAM_HUD_SIGN_H, 6, border);
+      _tft->setTextDatum(MC_DATUM);
+      _tft->setTextColor(colorGold(), wood);
+      _tft->drawString("TIME", WAM_HUD_TIME_CX, WAM_HUD_LABEL_CY, 1);
+      _tft->drawString("SCORE", WAM_HUD_SCORE_CX, WAM_HUD_LABEL_CY, 1);
+      _tft->drawString("HITS", WAM_HUD_HITS_CX, WAM_HUD_LABEL_CY, 1);
+      _tft->setTextDatum(TL_DATUM);
     }
 
     void drawHudField(int centerX, int width, int value, int digits) {

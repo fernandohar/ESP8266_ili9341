@@ -7,6 +7,7 @@ class GameProgress {
   public:
     static int getCoins();
     static void addCoin();
+    static void addCoins(int count);
     static void resetCoins();
 };
 

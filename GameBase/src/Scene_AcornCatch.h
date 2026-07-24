@@ -83,6 +83,17 @@
 #define END_MESSAGE_LINE2_Y 165
 #define END_MESSAGE_GAP 1
 
+// Coins awarded on a win are proportional to the seconds left on the clock when
+// the acorn target was reached (finish faster -> earn more). A win always pays
+// at least COIN_WIN_MINIMUM so a last-second victory still rewards the player.
+#define COINS_PER_SECOND_LEFT 1
+#define COIN_WIN_MINIMUM 1
+// Win screen layout: title, the coin count (large digits), and a "COINS" label.
+#define WIN_TITLE_Y 118
+#define WIN_COINS_NUM_Y 150
+#define WIN_COINS_LABEL_Y 196
+#define WIN_COINS_DIGIT_GAP 2
+
 #define HUD_WATCH_X 2
 #define HUD_WATCH_Y 2
 #define HUD_TIME_X 42
@@ -256,6 +267,7 @@ class Scene_AcornCatch : public GameScene {
 
       score = 0;
       caughtCount = 0;
+      coinsEarned = 0;
       state = ACORN_STATE_INTRO;
       stateStartMs = millis();
       introBlinkMs = stateStartMs;
@@ -326,6 +338,7 @@ class Scene_AcornCatch : public GameScene {
 
     int score = 0;
     int caughtCount = 0;
+    int coinsEarned = 0;
     int meiFrame = 0;
     bool meiFacingRight = true;
     unsigned long meiFrameMs = 0;
@@ -497,16 +510,23 @@ class Scene_AcornCatch : public GameScene {
     }
 
     void winGame(unsigned long now) {
-      (void)now;
       if (state == ACORN_STATE_WON || state == ACORN_STATE_LOST) {
         return;
       }
       state = ACORN_STATE_WON;
       freezeGameplay();
       resetHudCache();
+
+      // Reward is proportional to how much time was left when the target was hit.
+      int secondsLeft = (gameEndMs > now) ? (int)((gameEndMs - now) / 1000) : 0;
+      coinsEarned = secondsLeft * COINS_PER_SECOND_LEFT;
+      if (coinsEarned < COIN_WIN_MINIMUM) {
+        coinsEarned = COIN_WIN_MINIMUM;
+      }
+      GameProgress::addCoins(coinsEarned);
+
       updateHudAvatars(millis());
-      GameProgress::addCoin();
-      showEndMessage("YOU WIN");
+      showWinResult(coinsEarned);
       addSound(NOTE_G5, noteDurationMs(4, 800));
       addSound(NOTE_C6, noteDurationMs(4, 800));
       addSound(NOTE_E6, noteDurationMs(2, 800));
@@ -588,6 +608,62 @@ class Scene_AcornCatch : public GameScene {
       }
 
       renderFullScreen();
+    }
+
+    // Win screen: title, the coins earned as large digits, and a "COINS" label.
+    // All glyphs are tracked in endMessageAvatars so they are cleaned up with the
+    // rest of the end-message avatars when the scene is destroyed.
+    void showWinResult(int coins) {
+      if (endMessageBuilt) {
+        return;
+      }
+      endMessageBuilt = true;
+      endMessageAvatarCount = 0;
+
+      Avatar *glyphs[MAX_END_MESSAGE_GLYPHS];
+
+      int count = SpriteText::buildCenteredLine(this, "YOU WIN", WIN_TITLE_Y, glyphs,
+                                                MAX_END_MESSAGE_GLYPHS, END_MESSAGE_GAP);
+      for (int i = 0; i < count; i++) {
+        endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
+      }
+
+      count = buildCenteredNumber(coins, WIN_COINS_NUM_Y, glyphs,
+                                  MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount);
+      for (int i = 0; i < count; i++) {
+        endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
+      }
+
+      count = SpriteText::buildCenteredLine(this, "COINS", WIN_COINS_LABEL_Y, glyphs,
+                                            MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount, END_MESSAGE_GAP);
+      for (int i = 0; i < count; i++) {
+        endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
+      }
+
+      renderFullScreen();
+    }
+
+    // Lay out `value` as centered large-digit glyphs on row `y`, using the same
+    // digit sheet as the HUD score. Returns the number of glyphs created.
+    int buildCenteredNumber(int value, int y, Avatar *out[], int maxOut) {
+      char buf[8];
+      snprintf(buf, sizeof(buf), "%d", value);
+      int digits = (int)strlen(buf);
+      int totalWidth = digits * HUD_SCORE_DIGIT_W + (digits - 1) * WIN_COINS_DIGIT_GAP;
+      int cursor = (SCREENWIDTH - totalWidth) / 2;
+
+      int count = 0;
+      SpriteSheet sheet = digitSheet();
+      for (const char *p = buf; *p != '\0' && count < maxOut; ++p) {
+        int digit = *p - '0';
+        SpriteSheetRegion region = SpriteSheet::readRegion(sprite_digitsRegions,
+                                                           digit + SPRITE_DIGITS_LARGE_BASE);
+        Avatar *glyph = sheet.createAvatar((float)cursor, (float)y, region);
+        appendAvatar(glyph);
+        out[count++] = glyph;
+        cursor += HUD_SCORE_DIGIT_W + WIN_COINS_DIGIT_GAP;
+      }
+      return count;
     }
 
     void updatePlayer(const GameInput &input) {
