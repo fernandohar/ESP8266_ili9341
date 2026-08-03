@@ -1,23 +1,65 @@
-# GameBase (ESP32 + ILI9341)
+# GameBase — Custom 2D Game Engine on ESP32
 
-A small handheld-style game console running on an ESP32 with a 240x320 ILI9341
-TFT display and an XPT2046 resistive touch panel. A map-style **hub** menu
-launches four mini-games plus a Settings screen with touch calibration.
+A handheld-style game console built on an **ESP32** with a **240×320 ILI9341 TFT**
+display and **XPT2046** resistive touch panel. The firmware runs a custom 2D game
+engine (scene graph, avatar compositor, physics, audio) and ships with a
+**Studio Ghibli–themed virtual pet** hub plus three mini-games, a grocery store,
+and settings.
+
+**Repository:** [github.com/fernandohar/ESP8266_ili9341](https://github.com/fernandohar/ESP8266_ili9341)
+
+> For a polished demo/portfolio write-up, see [`NOTION.md`](NOTION.md).
+
+---
+
+## How it works
+
+**Pet Totoro** is the central hub. Tap Totoro to open a **radial action menu**:
+
+| Action | What it does |
+|--------|--------------|
+| **Play** | Sub-menu → Acorn Catch / Tic-Tac-Toe / Whack-a-Mole |
+| **Eat** | Grocery store — buy food to feed Totoro |
+| **Pet** | Boost happiness (limited sessions per minute) |
+| **Bath** | Clean Totoro and gain care XP |
+| **Info** | Read-only status screen (stats, growth stage, coins) |
+| **Set** | Touch calibration and factory reset |
+
+Press **Home** (button or on-screen) from any scene to return to Pet Totoro.
+Progress (pet stats, coins, touch calibration) is saved to ESP32 **NVS** on every
+scene change.
+
+---
 
 ## Scenes
 
 | Scene | What it is |
 |-------|------------|
-| **Hub** | Illustrated map menu; select a location with Left/Right + Home, or tap it. All games return here via **Home**. |
-| **Pet Totoro** | Virtual pet: walk Totoro around, clean up soot, and manage stats that decay over time. |
-| **Acorn Catch** | Catch falling acorns before Chu (the rival) grabs them; dodge falling soot; acorns speed up over time and the clock extends as you collect. Reach the target to win. |
-| **Tic-Tac-Toe** | Play 1P vs. a blocking/winning CPU or 2P hot-seat, on a grass board with Mei/Cat-Bus tokens. |
-| **Whack-a-Mole** | Timed rounds: tap the soot-moles as they pop up across five levels. |
-| **Settings** | Touch calibration (see below). |
+| **Pet Totoro** (hub) | Virtual pet home in a forest room. Walk Totoro by touch-drag, clean soot sprites, manage four stats (health, hunger, happiness, cleanness) that decay over time, and grow through Baby → Junior → Adult stages via care XP. |
+| **Acorn Catch** | Side-view catcher: Mei vs rival Chu Totoro. Three modes — **Time Attack** (30 s + bonus time per acorn), **Survival** (3 lives, dodge soot), **Collector** (reach 30 acorns). Falling acorns speed up; soot hazards penalize score/lives. |
+| **Tic-Tac-Toe** | 1P vs CPU (win/block AI with occasional fumble) or 2P hot-seat. Grass tiled board with Mei (O) and Cat Bus (X) tokens. |
+| **Whack-a-Mole** | 30-second timed rounds. Tap soot-moles across **5 difficulty levels** (faster spawn/visibility). |
+| **Grocery** | Paginated food shop (12 items). Purchases trigger an eating animation back in the pet home. |
+| **Status** | Read-only pet stats, growth stage + XP progress, coin count. |
+| **Settings** | Touch calibration and two-tap factory reset (wipes NVS pet save). |
 
 > For contributors / AI agents: see [`AGENTS.md`](AGENTS.md) for the asset
 > (sprite/background) generation pipeline and the rendering rules
 > (`renderScene()` vs `renderFullScreen()`).
+
+---
+
+## Engine highlights
+
+| Subsystem | Implementation |
+|-----------|----------------|
+| **Scene manager** | Fixed 20 Hz tick, dirty-rectangle rendering, up to 10 scenes |
+| **Avatars** | PROGMEM RGB565 sprites + 1-bit opacity masks, animation, sprite sheets, attachments |
+| **Backgrounds** | Full bitmap (~150 KB) or tiled repeat (~5 KB for 50×50 grass) |
+| **Physics** | AABB + circle collision with impulse resolution (`Physics.h`) |
+| **Input** | Resistive touch (XPT2046) + optional 3-button pad (Left / Home / Right) |
+| **Audio** | Non-blocking tone queue via FreeRTOS task on ESP32 (`SoundPlayer`) |
+| **Persistence** | NVS for touch calibration and pet progress (`PetSave`, `TouchCalibration`) |
 
 ---
 
@@ -42,13 +84,15 @@ The board enumerates as `/dev/cu.usbserial-0001` on macOS (yours may differ; run
 `pio device list` to check).
 
 ```bash
+cd GameBase
+
 # Build + upload to the ESP32 (esp32-hw is the default env)
 pio run -t upload
 
 # Open the serial monitor (115200 baud)
 pio device monitor
 
-# Full wipe of flash + NVS (also clears saved touch calibration), then reflash
+# Full wipe of flash + NVS (also clears saved touch calibration + pet save), then reflash
 pio run -t erase
 pio run -t upload
 ```
@@ -65,6 +109,8 @@ The simulator uses [`diagram.json`](diagram.json) and [`wokwi.toml`](wokwi.toml)
 (which points at the `esp32-wroom` build output).
 
 ```bash
+cd GameBase
+
 # 1. Build the simulator firmware (NOT the default env)
 pio run -e esp32-wroom
 
@@ -123,7 +169,7 @@ Notes:
 
 ---
 
-## Wiring — Physical buttons (not required, optional)
+## Wiring — Physical buttons (optional)
 
 Three momentary push buttons drive the menu (Left / Home / Right). They are
 **active-LOW with the ESP32 internal pull-ups**, so each button just connects a
@@ -171,14 +217,15 @@ There are four ways — you can never get locked out:
 2. **Boot combo (hardware escape hatch).** Hold **LEFT + RIGHT** while pressing
    the board's reset/EN button. Works even when the stored calibration is
    completely wrong (calibration reads raw ADC values, not the stored mapping).
-3. **Settings screen.** From the hub, open **Settings**, then tap the
-   **"Calibrate Touch"** button — or press the **LEFT** button while in Settings.
+3. **Settings screen.** From the hub, open **Settings** (radial menu → Set), then
+   tap the **"Calibrate Touch"** button — or press the **LEFT** button while in
+   Settings.
 4. **Empty NVS.** After `pio run -t erase`, the next boot auto-calibrates.
 
 ### Factory-reset the calibration
 
 ```bash
-pio run -t erase     # wipes flash + NVS (clears saved calibration)
+pio run -t erase     # wipes flash + NVS (clears saved calibration + pet save)
 pio run -t upload    # reflash; next boot auto-calibrates
 ```
 
