@@ -16,6 +16,10 @@ void GameProgress::addCoins(int count) {
   }
 }
 
+void GameProgress::setCoins(int count) {
+  coinCount = (count < 0) ? 0 : count;
+}
+
 void GameProgress::resetCoins() {
   coinCount = 0;
 }

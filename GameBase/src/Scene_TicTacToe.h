@@ -3,11 +3,17 @@
 
 #include <Arduino.h>
 #include "GameScene.h"
+#include "GameSceneIds.h"
+#include "GameResult.h"
 #include "Input.h"
 #include "SpriteSheet.h"
 #include "TouchInput.h"
 #include "image_grass_tile.h"
 #include "sprite_ttt_grid.h"
+
+// Coins awarded for a decisive Tic-Tac-Toe result (player win in 1P, or any
+// winner in 2P). A draw is a consolation loss.
+#define TTT_WIN_COINS 6
 #include "sprite_ttt_tokens.h"
 
 // Grass board rendered from a tiny 50x50 grass tile repeated across the whole
@@ -20,6 +26,11 @@
 #define TTT_EMPTY 0
 #define TTT_X 1   // Cat Bus  -> token region 1
 #define TTT_O 2   // Mei      -> token region 0
+
+// Per-move chance (%) the AI "fumbles" a key rule: independently rolled for
+// taking its own win and for blocking the player, so a sharp player can now win
+// instead of only ever drawing. 0 = perfect heuristic, 100 = ignores win/block.
+#define TTT_AI_MISTAKE_CHANCE 35
 
 #define TTT_TOKEN_REGION_MEI 0
 #define TTT_TOKEN_REGION_CATBUS 1
@@ -72,7 +83,7 @@ class Scene_TicTacToe : public GameScene {
 
       if (input.homePressed) {
         *needChangeScene = true;
-        *nextSceneIndex = 0;
+        *nextSceneIndex = SCENE_PET_TOTORO;
         return;
       }
 
@@ -342,17 +353,26 @@ class Scene_TicTacToe : public GameScene {
     }
 
     int chooseAiMove() {
-      for (int i = 0; i < 9; i++) {
-        if (board[i] != TTT_EMPTY) continue;
-        board[i] = TTT_O;
-        if (checkWinner() == TTT_O) { board[i] = TTT_EMPTY; return i; }
-        board[i] = TTT_EMPTY;
+      // Independently decide whether to bother taking a win / making a block
+      // this move. Skipping either is what lets a good player actually win.
+      bool goForWin = (random(0, 100) >= TTT_AI_MISTAKE_CHANCE);
+      bool doBlock = (random(0, 100) >= TTT_AI_MISTAKE_CHANCE);
+
+      if (goForWin) {
+        for (int i = 0; i < 9; i++) {
+          if (board[i] != TTT_EMPTY) continue;
+          board[i] = TTT_O;
+          if (checkWinner() == TTT_O) { board[i] = TTT_EMPTY; return i; }
+          board[i] = TTT_EMPTY;
+        }
       }
-      for (int i = 0; i < 9; i++) {
-        if (board[i] != TTT_EMPTY) continue;
-        board[i] = TTT_X;
-        if (checkWinner() == TTT_X) { board[i] = TTT_EMPTY; return i; }
-        board[i] = TTT_EMPTY;
+      if (doBlock) {
+        for (int i = 0; i < 9; i++) {
+          if (board[i] != TTT_EMPTY) continue;
+          board[i] = TTT_X;
+          if (checkWinner() == TTT_X) { board[i] = TTT_EMPTY; return i; }
+          board[i] = TTT_EMPTY;
+        }
       }
       if (board[4] == TTT_EMPTY) {
         return 4;
@@ -392,6 +412,11 @@ class Scene_TicTacToe : public GameScene {
       } else {
         msg = (winner == TTT_X) ? "CAT BUS WINS!" : "MEI WINS!";
       }
+      // Reward the pet: in 1P the human is X (win iff X wins); in 2P any decisive
+      // result counts as a win for the play session.
+      bool playerWon = (numPlayers != 1) || (winner == TTT_X);
+      GameResult::report(playerWon ? GAME_RESULT_WIN : GAME_RESULT_LOSS,
+                         playerWon ? TTT_WIN_COINS : 0);
       drawResult(msg);
       addSound(NOTE_G5, noteDurationMs(8, 800));
       addSound(NOTE_C6, noteDurationMs(8, 800));
@@ -401,6 +426,7 @@ class Scene_TicTacToe : public GameScene {
       // Flush the final placed token before we stop calling renderScene().
       renderScene();
       state = TTT_STATE_DRAW;
+      GameResult::report(GAME_RESULT_LOSS, 0);  // consolation reward for a draw
       drawResult("DRAW");
       addSound(NOTE_E4, noteDurationMs(8, 700));
       addSound(NOTE_E4, noteDurationMs(8, 700));

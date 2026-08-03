@@ -1,22 +1,43 @@
 #include "PetTotoroState.h"
 
 PetTotoroStats PetTotoroState::current = {PET_STAT_MAX, PET_STAT_MAX, PET_STAT_MAX, PET_STAT_MAX};
-bool PetTotoroState::alive = true;
+PetLifeState PetTotoroState::lifeState = PET_LIFE_ALIVE;
+uint32_t PetTotoroState::careXpValue = 0;
 
 void PetTotoroState::reset() {
   current.health = PET_STAT_MAX;
   current.hunger = PET_STAT_MAX;
   current.happiness = PET_STAT_MAX;
   current.cleanness = PET_STAT_MAX;
-  alive = true;
+  lifeState = PET_LIFE_ALIVE;
+  careXpValue = 0;
 }
 
 bool PetTotoroState::isAlive() {
-  return alive;
+  return lifeState != PET_LIFE_ESCAPED;
 }
 
 bool PetTotoroState::isGameOver() {
-  return !alive;
+  return lifeState == PET_LIFE_ESCAPED;
+}
+
+bool PetTotoroState::isSick() {
+  return lifeState == PET_LIFE_SICK;
+}
+
+bool PetTotoroState::hasEscaped() {
+  return lifeState == PET_LIFE_ESCAPED;
+}
+
+PetLifeState PetTotoroState::life() {
+  return lifeState;
+}
+
+void PetTotoroState::setLife(PetLifeState value) {
+  lifeState = value;
+  if (value == PET_LIFE_ESCAPED) {
+    current.health = PET_STAT_MIN;
+  }
 }
 
 const PetTotoroStats &PetTotoroState::stats() {
@@ -65,13 +86,30 @@ void PetTotoroState::adjustCleanness(int delta) {
   setCleanness(current.cleanness + delta);
 }
 
-void PetTotoroState::markDead() {
-  alive = false;
-  current.health = PET_STAT_MIN;
+uint32_t PetTotoroState::careXP() {
+  return careXpValue;
+}
+
+void PetTotoroState::setCareXP(uint32_t value) {
+  careXpValue = value;
+}
+
+void PetTotoroState::addCareXP(uint32_t amount) {
+  careXpValue += amount;
+}
+
+int PetTotoroState::stage() {
+  if (careXpValue >= PET_STAGE_ADULT_XP) {
+    return PET_STAGE_ADULT;
+  }
+  if (careXpValue >= PET_STAGE_JUNIOR_XP) {
+    return PET_STAGE_JUNIOR;
+  }
+  return PET_STAGE_BABY;
 }
 
 void PetTotoroState::reviveIfNeeded() {
-  if (!alive) {
+  if (lifeState == PET_LIFE_ESCAPED) {
     reset();
   }
 }

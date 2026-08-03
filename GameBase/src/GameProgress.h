@@ -8,6 +8,7 @@ class GameProgress {
     static int getCoins();
     static void addCoin();
     static void addCoins(int count);
+    static void setCoins(int count);
     static void resetCoins();
 };
 

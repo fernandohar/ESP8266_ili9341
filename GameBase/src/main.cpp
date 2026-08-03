@@ -10,15 +10,20 @@
 #include "Avatar.h"
 #include "GameScene.h"
 #include "GameSceneManager.h"
+#include "GameSceneIds.h"
 #include "Input.h"
 #include "SoundPlayer.h"
-#include "Scene_Hub.h"
 #include "Scene_PetTotoro.h"
 #include "Scene_AcornCatch.h"
 #include "Scene_Settings.h"
 #include "Scene_TicTacToe.h"
 #include "Scene_WhackAMole.h"
+#include "Scene_Status.h"
+#include "Scene_Grocery.h"
 #include "TouchCalibration.h"
+#include "PetSave.h"
+#include "PetClock.h"
+#include "PetSim.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
 #define TOUCH_IRQ 21
@@ -156,14 +161,45 @@ void setup() {
   }
 #endif
 
+  // Restore saved coins + pet stats before any scene initialises so the pet
+  // home draws with the persisted state.
+  PetSave::load();
+
+  // Real-time clock + offline decay catch-up. With no RTC wired
+  // (PET_USE_RTC == 0) PetClock::available() is always false, so this whole
+  // block is skipped and the pet only decays while powered on. Once a DS3231 is
+  // wired and PET_USE_RTC is set to 1, boots apply a capped amount of the time
+  // that elapsed while the device was off.
+  PetClock::begin();
+  if (PetClock::available()) {
+    uint32_t nowEpoch = PetClock::nowEpoch();
+    uint32_t lastSeen = PetSave::lastSeenEpoch();
+    if (PetSave::bornEpoch() == 0) {
+      PetSave::setBornEpoch(nowEpoch);
+    }
+    if (lastSeen != 0 && nowEpoch > lastSeen && PetTotoroState::isAlive()) {
+      uint32_t elapsed = nowEpoch - lastSeen;
+      if (elapsed > PET_OFFLINE_CAP_SECONDS) {
+        elapsed = PET_OFFLINE_CAP_SECONDS;
+      }
+      PetSim::applyElapsedSeconds(elapsed);
+    }
+    PetSave::setLastSeenEpoch(nowEpoch);
+  }
+
   manager = new GameSceneManager(tft, TOUCH_IRQ, isTouching);
 
-  manager->appendScene(new Scene_Hub(tft));                 // 0 - Hub
-  manager->appendScene(new Scene_PetTotoro(tft));           // 1 - Pet Totoro
-  manager->appendScene(new Scene_AcornCatch(tft));          // 2 - Acorn Catch
-  manager->appendScene(new Scene_Settings(tft));            // 3 - Settings
-  manager->appendScene(new Scene_TicTacToe(tft));           // 4 - Tic Tac Toe
-  manager->appendScene(new Scene_WhackAMole(tft));          // 5 - Whack-a-Mole
+  // The pet's forest home is scene 0 and the central hub of the game. Mini-games
+  // and Settings are reached from the radial menu (tap Totoro) and return here.
+  manager->appendScene(new Scene_PetTotoro(tft));           // 0 - Pet Totoro
+  manager->appendScene(new Scene_AcornCatch(tft));          // 1 - Acorn Catch
+  manager->appendScene(new Scene_Settings(tft));            // 2 - Settings
+  manager->appendScene(new Scene_TicTacToe(tft));           // 3 - Tic Tac Toe
+  manager->appendScene(new Scene_WhackAMole(tft));          // 4 - Whack-a-Mole
+  manager->appendScene(new Scene_Status(tft));              // 5 - Status
+  manager->appendScene(new Scene_Grocery(tft));             // 6 - Grocery (Eat)
+
+  manager->startScene(SCENE_PET_TOTORO);
 
   Serial.println("Start up Completed");
 #if !defined(WOKWI_CAP_TOUCH)

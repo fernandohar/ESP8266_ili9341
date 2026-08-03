@@ -11,6 +11,7 @@
 #include "GameScene.h"
 #include "Input.h"
 #include "SoundPlayer.h"
+#include "PetSave.h"
 #include <TFT_eSPI.h>
 
 class GameSceneManager {
@@ -19,9 +20,12 @@ class GameSceneManager {
     
     void appendScene(GameScene *gameScene) {
       _scenes[_totalScenes++] = gameScene;
-      if ( _currentSceneIndex == -1) {
-        changeScene(0);
-      }
+    }
+
+    // Explicitly select the first scene to show. Call once after all scenes are
+    // registered (the boot scene, e.g. the pet's home).
+    void startScene(int sceneIndex) {
+      changeScene(sceneIndex);
     }
 
     
@@ -92,6 +96,9 @@ class GameSceneManager {
     void changeScene(unsigned sceneIndex) {
       Serial.println("changeScene");
       if (_currentSceneIndex >= 0) {
+        // Persist coins + pet stats when leaving a scene so progress survives
+        // reboots (scene changes are user-paced, so this won't thrash NVS).
+        PetSave::save();
         _scenes[_currentSceneIndex]->destroyScene();
       }
       _currentSceneIndex = sceneIndex;

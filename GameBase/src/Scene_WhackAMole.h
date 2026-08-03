@@ -3,12 +3,18 @@
 
 #include <Arduino.h>
 #include "GameScene.h"
+#include "GameSceneIds.h"
+#include "GameResult.h"
 #include "Input.h"
 #include "SpriteSheet.h"
 #include "SpriteText.h"
 #include "TouchInput.h"
 #include "image_grass_tile.h"
 #include "sprite_soot_mole.h"
+
+// Coin reward tuning: one coin per this many mole hits (a round with no hits is
+// counted as a loss for the consolation reward).
+#define WAM_HITS_PER_COIN 2
 
 // Grass tiled across the whole screen (setBackgroundTile) instead of a
 // ~150 KB full-screen image; soot-sprite "moles" pop up at random spots on the
@@ -88,7 +94,7 @@ class Scene_WhackAMole : public GameScene {
 
       if (input.homePressed) {
         *needChangeScene = true;
-        *nextSceneIndex = 0;
+        *nextSceneIndex = SCENE_PET_TOTORO;
         return;
       }
 
@@ -298,6 +304,19 @@ class Scene_WhackAMole : public GameScene {
     void endRound() {
       state = WAM_STATE_ENDED;
       hideAllMoles();
+
+      // Report the round to the pet home: any hits count as a win (coins scale
+      // with hits), an empty round is a consolation loss.
+      if (hits > 0) {
+        int reward = hits / WAM_HITS_PER_COIN;
+        if (reward < 1) {
+          reward = 1;
+        }
+        GameResult::report(GAME_RESULT_WIN, reward);
+      } else {
+        GameResult::report(GAME_RESULT_LOSS, 0);
+      }
+
       showBanner("TIME UP", 130);
 
       char buf[40];
