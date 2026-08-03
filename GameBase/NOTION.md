@@ -1,208 +1,139 @@
-# Custom 2D Game Engine on ESP32
+# Notion Demo Page — Copy-Ready Content
 
-> Copy sections below into your Notion demo page. This file is the source of truth
-> for project descriptions — keep it in sync when features change.
-
----
-
-## One-liner
-
-A **handheld game console** on an ESP32: custom 2D engine, resistive touch UI,
-virtual pet hub, and three mini-games — all running on a 240×320 ILI9341 display
-with ~2.8 MB of PROGMEM sprite assets.
+Paste sections below into your Notion page. This matches your current structure but
+corrects inaccuracies and fills placeholders based on the actual firmware.
 
 ---
 
-## Project overview
+## Overview
 
-This project is a **custom 2D game engine** written in C++ for the ESP32, paired
-with a complete game experience themed around Studio Ghibli's forest spirits.
+A custom 2D game engine built to run on **ESP32** microcontrollers, paired with a
+complete **handheld game console** demo: a Studio Ghibli–themed virtual pet hub,
+three mini-games, and a grocery store — all on a 240×320 ILI9341 TFT with
+resistive touch.
 
-There is no third-party game framework. The engine provides:
+**Goals**
 
-- A **scene graph** with fixed-tick game loop (20 Hz)
-- **Dirty-rectangle rendering** for flicker-free sprite animation on SPI TFT
-- An **avatar system** with PROGMEM sprites, opacity masks, animation, and attachments
-- Lightweight **2D physics** (AABB + circle collision)
-- **Touch + button input** with NVS-persisted calibration
-- **Non-blocking audio** via a FreeRTOS tone queue
-- **NVS persistence** for virtual pet progress and economy
+- Smooth 2D rendering on constrained hardware
+- Simple workflow for building small games/demos
+- Support multiple small game genres out of the box (e.g., **digital pet**, **tic-tac-toe**, **whack-a-mole**, **catch/collection arcade**)
+- Keep **input polling** and **simulation/game speed** deterministic even when rendering slows down (render frame skipping / decoupled update)
+- Overcome slow **SPI TFT** full-frame refresh by avoiding whole-screen redraws (reduce flicker via **dirty-rectangle / partial updates**)
+- Support **stacked sprite compositing** (avatars + parented attachments, z-ordered with 1-bit opacity masks)
 
-The player experience centers on **Pet Totoro** — a virtual pet hub — with radial
-menu navigation to mini-games, a grocery store, stats, and settings.
+**Current scope**
 
-**GitHub:** https://github.com/fernandohar/ESP8266_ili9341
+- 2D rendering engine with **sprite** support (PROGMEM RGB565 + 1-bit masks)
+- **Parented attachments** (e.g. food held by the pet during eating animation)
+- **Sprite sheets** — one bitmap, many sub-regions (growth stages, soot variants, UI digits)
+- **Tiled backgrounds** — small repeating tiles (~5 KB) instead of full-screen bitmaps (~150 KB)
+- **Rectangle collision detection** (AABB) + **circle tests** for physics
+- **Mask-based hit testing** for touch (per-pixel opacity lookup after AABB reject)
+- **Scene swapping** (scene manager, up to 10 scenes; 7 registered today)
+- **Minimal rendering** with a **dirty-rectangle compositor**
+- **Input**: resistive touch (XPT2046) + optional 3-button pad (Left / Home / Right)
+- Deterministic **20 Hz game loop** that prioritizes update/input when rendering becomes expensive
+- **Non-blocking audio** via FreeRTOS tone queue
+- **NVS persistence** for pet progress and touch calibration
 
----
+### Demo game
 
-## Hardware
+Built a **Pet Totoro virtual pet** hub on top of the engine, with three mini-games:
 
-| Component | Details |
-|-----------|---------|
-| **MCU** | ESP32 DevKit (ESP32-WROOM-32) |
-| **Display** | ILI9341 240×320 TFT, portrait, SPI @ 27 MHz |
-| **Touch** | XPT2046 resistive (physical) / FT6206 capacitive (Wokwi sim) |
-| **Buttons** | 3× momentary (Left GPIO13, Home GPIO27, Right GPIO14) — optional |
-| **Speaker** | Piezo buzzer on GPIO16 |
-| **RTC** | Optional DS3231 for offline pet stat decay |
+| Scene | What it demonstrates |
+|-------|---------------------|
+| **Pet Totoro** (hub) | Radial menu, stat decay, growth stages, soot cleaning, touch-drag movement, NVS save |
+| **Acorn Catch** | Physics, multi-avatar animation, game modes, score HUD with sprite digits |
+| **Tic-Tac-Toe** | Tiled background + overlay grid, AI opponent, mask-based token placement |
+| **Whack-a-Mole** | Timed rounds, difficulty scaling, mask-based tap targets |
+| **Grocery** | Paginated store UI, coin economy, cross-scene handoff (PendingMeal → eating animation) |
+| **Status / Settings** | Static screens, calibration, factory reset |
 
-### Critical wiring note
-
-**Do NOT connect the LCD SDO/MISO pin to GPIO19.** GPIO19 is reserved for the
-touch controller's T_DO only. Connecting both breaks touch reads — the #1 cause
-of "touch stopped working."
-
-See `GameBase/docs/images/wiring_display.png` and `wiring_buttons.png` for diagrams.
-
----
-
-## Try it (no hardware)
-
-The project includes a **Wokwi simulator** configuration:
-
-```bash
-cd GameBase
-pio run -e esp32-wroom
-# Then: VS Code → "Wokwi: Start Simulator"
-```
-
-The simulator uses capacitive touch (no calibration needed) and matches the
-physical firmware's scene logic.
+All scenes return to the hub via **Home**. Progress saves to ESP32 NVS on every scene change.
 
 ---
 
-## Game experience
+## Demo
 
-### Hub — Pet Totoro (virtual pet home)
+<aside>
+▶️
 
-The forest room is the **central hub**. Tap Totoro to open a **radial menu**:
+**Suggested caption:** Tap Totoro to open the radial menu → pick a mini-game → earn coins → buy food at the grocery → return home to watch Totoro eat. The engine repaints only dirty sprite regions, so animation stays smooth on SPI TFT.
 
-```
-        [ Pet ]
-  [Play]     [Eat]
-[Set]  Totoro  [Info]
-       [Bath]
-```
+</aside>
 
-| Action | Description |
-|--------|-------------|
-| **Play** | Choose a mini-game: Acorn Catch, Tic-Tac-Toe, or Whack-a-Mole |
-| **Eat** | Open the grocery store to buy food |
-| **Pet** | Boost happiness (rate-limited) |
-| **Bath** | Clean Totoro, gain care XP |
-| **Info** | View stats, growth stage, coins |
-| **Set** | Touch calibration, factory reset |
+- **Video**: (record Wokwi sim or physical board — see Try it below)
+- **Playable (no hardware)**: build `esp32-wroom` and run in [Wokwi](https://wokwi.com) via `GameBase/diagram.json`
+- **Repo**: https://github.com/fernandohar/ESP8266_ili9341
 
-**Virtual pet mechanics:**
+**Screenshots in repo** (upload to Notion):
 
-- **Four stats:** Health, Hunger, Happiness, Cleanness (0–100, shown as pips)
-- **Growth stages:** Baby → Junior (150 care XP) → Adult (500 care XP)
-- **Life states:** Alive → Sick (health = 0, 60 s grace) → Escaped (requires reset)
-- **Care actions:** Walk Totoro (touch-drag), clean soot, pet, bathe, feed
-- **Stat decay:** Hunger ~45 s, Happiness ~60 s, Health ~30 s
-- **Economy:** Earn coins in mini-games → spend at grocery → eating animation at home
-- **Persistence:** All progress saved to ESP32 NVS on every scene change
-
-### Mini-game 1 — Acorn Catch
-
-Side-view catcher starring **Mei** vs rival **Chu Totoro**.
-
-| Mode | Rules |
-|------|-------|
-| **Time Attack** | 30 seconds + 1 s bonus per acorn collected |
-| **Survival** | 3 lives; dodge falling soot hazards |
-| **Collector** | Reach 30 acorns to win |
-
-Features: ramping fall speed, Chu can jump and steal acorns, sonic-style scatter
-visual on hit, coin/happiness rewards on return to hub.
-
-### Mini-game 2 — Tic-Tac-Toe
-
-- **1P vs CPU** or **2P hot-seat**
-- Grass tiled background + wooden grid overlay
-- Tokens: Mei = O, Cat Bus = X (circular masked sprites)
-- AI uses win/block heuristic with 35% fumble chance
-- Win reward: 6 coins
-
-### Mini-game 3 — Whack-a-Mole
-
-- 30-second timed rounds on grass tile background
-- 10 soot-mole variants, up to 3 active at once
-- 5 difficulty levels (faster spawn/visibility per level)
-- 1 coin per 2 hits
-
-### Grocery store
-
-- 12 food items (Broccoli, Cotton candy, Salad, Bun, Onigiri, Soft serve, Sushi,
-  Hamburger, Dorayaki, Yam, Green onion, Ramen)
-- Paginated 4×2 store UI
-- Purchase → return to pet home → 3-frame eating animation attached to Totoro
+- `GameBase/assets/Screenshot_*.png` — in-game captures
+- `GameBase/docs/images/wiring_display.png` — hardware wiring
+- `GameBase/assets/sprite_ttt_tokens_preview.png` — Tic-Tac-Toe tokens
 
 ---
 
-## Engine architecture
+## Features
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  main.cpp                                               │
-│  Boot → Touch cal (NVS) → PetSave load → SceneManager   │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────┐
-│  GameSceneManager (20 Hz tick)                          │
-│  initScene → update → render → destroyScene on switch   │
-│  PetSave::save() on every scene transition              │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-  Scene_PetTotoro    Scene_AcornCatch   Scene_TicTacToe  …
-        │                  │                  │
-        └──────────────────┴──────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────┐
-│  GameScene (base class)                                 │
-│  Avatars (≤50) + Attachments + Background               │
-│  renderScene() — dirty-rect compositor                  │
-│  renderFullScreen() — full 240×320 repaint (rare)       │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-   TFT_eSPI           Physics.h         SoundPlayer
-   (SPI display)      (collision)       (FreeRTOS task)
-```
+### Rendering
 
-### Key technical decisions
+- Sprites — PROGMEM RGB565 blitting with 1-bit opacity masks
+- Parented **attachments** (child sprites follow a parent avatar)
+- **Sprite sheets** — sub-rectangle extraction without duplicating pixel data
+- **Dirty-rectangle compositor** — repaints only spans affected by moved/animated sprites
+- **Tiled backgrounds** — modulo-wrapped repeat tiles (50×50 grass ≈ 5 KB vs 150 KB full screen)
+- **Transparency** — mask-based; handles cases where opaque white ≠ transparent sentinel
+- Horizontal flip (`flipX`) for facing direction
+- Multi-frame animation (up to 50 frames per avatar)
+- ~~Tilemap engine~~ — not a general tilemap; scenes use tiled backgrounds + avatar overlays
+- ~~Camera / parallax~~ — not implemented
 
-| Decision | Why |
-|----------|-----|
-| **Dirty-rectangle rendering** | Full 240×320 framebuffer won't fit in RAM; repaint only changed sprite spans |
-| **PROGMEM + 1-bit masks** | RGB565 bitmaps in flash; masks handle transparency (white ≠ transparent) |
-| **Tiled backgrounds** | 50×50 grass tile (~5 KB) vs full screen (~150 KB) — saves flash |
-| **Sprite sheets** | One bitmap, many sub-regions (Totoro stages, soot variants, digits) |
-| **Dual touch targets** | Same code on hardware (XPT2046 + cal) and Wokwi (FT6206) via compile flag |
-| **Deferred globals** | TFT_eSPI constructed in `setup()`, not static scope — avoids ESP32 boot crash |
-| **Vendored TFT_eSPI** | Patched TOUCH_CS fix; config via `platformio.ini` build flags |
+### Game framework
 
-### Asset pipeline
+- Scene/state system — `GameSceneManager` with init / update / render / destroy lifecycle
+- Collision — AABB + circle tests with impulse resolution (`Physics.h`)
+- Touch hit testing — AABB reject, then mask pixel lookup (`Avatar::contains()`)
+- Input — touch (primary) + debounced buttons (Left GPIO13, Home GPIO27, Right GPIO14)
+- Game loop — deWiTTERS constant game speed; skips up to 5 render frames before forcing a draw
+- Audio — queued tones via FreeRTOS task on ESP32 (`SoundPlayer`, GPIO16 piezo)
+- Persistence — NVS for pet stats/coins (`PetSave`) and touch calibration (`TouchCalibration`)
+- Cross-scene handoffs — `GameResult` (mini-game rewards), `PendingMeal` (grocery → eating)
 
-Source PNG art in `assets/` → Python tools in `tools/` → PROGMEM headers in `src/`.
+### Tools
 
-```bash
-python3 tools/png_to_spritesheet.py assets/foo.png -o src/sprite_foo.h -n sprite_foo
-pio run
-```
-
-See `AGENTS.md` for generator scripts and rendering rules.
+- **Asset pipeline** — Python scripts in `tools/` convert PNG → PROGMEM headers (`png_to_spritesheet.py` + purpose-built generators)
+- ~~Level editor~~ — not implemented
+- ~~Debug overlays (FPS, heap)~~ — not implemented (commented debug hooks exist in scene manager)
 
 ---
 
-## Scene map
+## Architecture
+
+### Hardware + display
+
+- **Started on:** ESP8266 (early prototype; `nodemcuv2` env still in `platformio.ini`)
+- **Current target:** ESP32-WROOM-32 DevKit (`board = esp32dev`)
+- **Display:** ILI9341, 240×320 portrait, SPI @ 27 MHz
+- **Touch:** XPT2046 resistive (physical) / FT6206 capacitive (Wokwi simulator)
+- **Update rate:** 20 Hz fixed tick (`UPDATES_PER_SECOND = 20`)
+- **Render rate:** ~20 FPS (50 ms) or ~30 FPS (33 ms) on urgent `requestRender()`
+
+### Software stack
+
+- **Framework:** Arduino (PlatformIO, `espressif32`)
+- **Graphics driver:** TFT_eSPI v2.4.2 (vendored + patched in `lib/TFT_eSPI/`)
+- **Memory strategy:**
+  - All sprites/backgrounds in **flash** (PROGMEM) — ~2.8 MB of generated headers
+  - **No full-screen framebuffer** — two line buffers (`renderbuf[2][240]`) for dirty-rect compositing
+  - No PSRAM required
+  - Tiled backgrounds to minimize flash usage per scene
+
+### Scene map
 
 | Index | Scene | Role |
 |-------|-------|------|
-| 0 | Pet Totoro | **Hub** — virtual pet home + radial menu |
+| 0 | Pet Totoro | Hub — virtual pet home + radial menu |
 | 1 | Acorn Catch | Mini-game |
 | 2 | Settings | Calibration + factory reset |
 | 3 | Tic-Tac-Toe | Mini-game |
@@ -210,69 +141,125 @@ See `AGENTS.md` for generator scripts and rendering rules.
 | 5 | Status | Read-only pet stats |
 | 6 | Grocery | Food shop |
 
-> The old **map-style location hub** has been removed. Pet Totoro is scene 0 and
-> the sole navigation center.
+> The old map-style location hub has been removed. Pet Totoro is the sole navigation center.
 
 ---
 
-## Build & flash (physical board)
+## Performance notes
 
-```bash
-cd GameBase
-pio run -t upload          # default env: esp32-hw
-pio device monitor       # 115200 baud; type 'c' to recalibrate touch
+### Frame skipping / timing behavior
+
+The engine uses a **fixed 20 Hz update tick** (50 ms). Rendering runs asynchronously
+at ~20 FPS. When update + logic consume multiple ticks before the next render slot,
+the scene manager **skips render frames** (up to `MAX_FRAMESKIP = 5`) so that:
+
+- **Game update speed** stays consistent (simulation time stays accurate)
+- **Input polling** remains responsive (touch/buttons polled once per tick, not per loop iteration)
+
+After 5 skipped frames, a render is forced and the game visually slows down.
+
+### Dirty rectangles with stacked sprites
+
+Avatars are z-ordered in an array; the compositor unions bounding boxes of sprites
+that moved or changed animation frame, then repaints only those screen spans row-by-row.
+Parented **attachments** (e.g. food during eating) inherit the parent's dirty region.
+Opacity masks ensure only visible pixels are drawn — no full-screen clears.
+
+| Scenario | Resolution | Update | Render | Notes |
+| --- | --- | --- | --- | --- |
+| Pet Totoro hub (8 soot + animated Totoro) | 240×320 | 20 Hz | ~20 FPS | Dirty-rect; forest background is a full bitmap |
+| Acorn Catch (Mei + Chu + falling objects) | 240×320 | 20 Hz | ~20 FPS | Physics + multi-avatar animation |
+| Tic-Tac-Toe / Whack-a-Mole / Grocery | 240×320 | 20 Hz | ~20 FPS | Tiled grass background (~5 KB tile) |
+| Static screens (Status, Settings) | 240×320 | 20 Hz | draw once | `initScene()` draws; `render()` is no-op |
+
+### ESP8266 → ESP32 migration
+
+Early work ran on ESP8266 (80 MHz). Migration to ESP32 was driven by GPIO
+availability, FreeRTOS (non-blocking audio), and NVS persistence — not primarily
+for rendering speed. The `nodemcuv2` environment remains but is not the active target.
+
+---
+
+## Example code
+
+Real structure (simplified from `main.cpp` + `GameSceneManager.h`):
+
+```cpp
+// Construct in setup(), NOT as globals (ESP32 boot crash otherwise)
+TFT_eSPI *tft = new TFT_eSPI();
+GameSceneManager *manager = new GameSceneManager(tft, TOUCH_IRQ, isTouching);
+
+void setup() {
+  tft->init();
+  TouchCalibration::loadOrCalibrate(tft);
+  PetSave::load();
+
+  manager->appendScene(new Scene_PetTotoro(...));
+  manager->appendScene(new Scene_AcornCatch(...));
+  // ... register all scenes ...
+  manager->startScene(SCENE_PET_TOTORO);
+}
+
+void loop() {
+  manager->update();  // fixed 20 Hz tick + decoupled render
+}
 ```
 
-| Environment | Target | Touch |
-|-------------|--------|-------|
-| `esp32-hw` (default) | Physical ESP32 + ILI9341 + XPT2046 | Resistive, calibrated |
-| `esp32-wroom` | Wokwi simulator | Capacitive, no calibration |
+Scene pattern:
 
-**Never flash `esp32-wroom` to physical hardware.**
-
----
-
-## Screenshots & media
-
-Suggested assets for the Notion page (already in repo):
-
-| File | Use |
-|------|-----|
-| `GameBase/docs/images/wiring_display.png` | Hardware wiring diagram |
-| `GameBase/docs/images/wiring_buttons.png` | Button wiring |
-| `GameBase/assets/Screenshot_*.png` | In-game screenshots |
-| `GameBase/assets/grass_tile_preview.png` | Tiled background example |
-| `GameBase/assets/sprite_ttt_tokens_preview.png` | Tic-Tac-Toe tokens |
-
-Embed a Wokwi simulation link or screen recording of the pet hub + mini-games
-for the strongest demo impact.
+```cpp
+class Scene_AcornCatch : public GameScene {
+  void initScene() {
+    setBackground(acorn_catch_bg);
+    appendAvatar(new Avatar(...));  // Mei, Chu, acorns, soot
+  }
+  void update(bool isTouching, bool *needChangeScene, int *nextSceneIndex) {
+    // physics, input, game logic
+    if (gameOver) { *needChangeScene = true; *nextSceneIndex = SCENE_PET_TOTORO; }
+  }
+  void render() { renderScene(); }  // dirty-rect, NOT full screen every frame
+};
+```
 
 ---
 
-## What was wrong / outdated (fix checklist)
+## Roadmap
 
-Use this checklist when updating the Notion page:
-
-- [ ] **Hub description** — It is **Pet Totoro**, not a map-style location menu
-- [ ] **Navigation** — Radial menu on tap (Play / Eat / Pet / Bath / Info / Set)
-- [ ] **Missing scenes** — Add **Grocery** and **Status**
-- [ ] **Virtual pet** — Document stats, growth stages, soot cleaning, coin economy
-- [ ] **Acorn Catch modes** — Time Attack, Survival, Collector (not just "catch acorns")
-- [ ] **Whack-a-Mole** — 5 difficulty levels, 30 s rounds
-- [ ] **Tic-Tac-Toe** — Mei/Cat Bus tokens, AI fumble, 1P/2P modes
-- [ ] **Persistence** — NVS saves pet + calibration; factory reset in Settings
-- [ ] **Platform** — ESP32 (repo name `ESP8266_ili9341` is legacy)
-- [ ] **MISO warning** — LCD SDO must stay disconnected from GPIO19
-- [ ] **Simulator** — Wokwi works with `esp32-wroom` build, no hardware needed
+- [ ] **Tetris** — listed as a goal genre; not yet implemented
+- [ ] Restore **map-style hub** as an optional scene (removed in favor of Pet Totoro radial menu)
+- [ ] Enable **DS3231 RTC** for real offline pet stat decay (`PET_USE_RTC` in `PetClock.h`)
+- [ ] Grocery item pricing (currently all items cost 0 coins — testing mode)
+- [ ] Debug overlay — FPS counter, heap monitor (hooks exist but commented out)
+- [ ] Additional mini-games using the existing scene/avatar framework
 
 ---
 
-## Tech stack summary (for resume / portfolio)
+## Credits / Inspiration
 
-- **Language:** C++ (Arduino framework)
-- **Platform:** ESP32, PlatformIO
-- **Display:** TFT_eSPI (vendored, patched)
-- **Storage:** ESP32 NVS (Preferences API)
-- **Concurrency:** FreeRTOS audio task
-- **Tools:** Python asset pipeline (PNG → PROGMEM)
-- **Simulation:** Wokwi (ESP32 + ILI9341 cap-touch board)
+- **[TFT_eSPI](https://github.com/Bodmer/TFT_eSPI)** — display driver (vendored + patched for `TOUCH_CS`)
+- **[komrad36/ArduinoPhysics](https://github.com/komrad36/ArduinoPhysics)** — impulse collision resolution adapted in `Physics.h`
+- **[deWiTTERS game loop](https://www.koonsolo.com/news/dewitters-gameloop/)** — constant game speed with max FPS / frame skip
+- **[Wokwi](https://wokwi.com)** — ESP32 + ILI9341 capacitive-touch simulator (`diagram.json`)
+- Studio Ghibli characters used as fan-art demo theme (Totoro, Mei, Cat Bus, soot sprites)
+
+---
+
+## Contact
+
+- GitHub: https://github.com/fernandohar
+- Repo: https://github.com/fernandohar/ESP8266_ili9341
+
+---
+
+## Fix checklist (what was wrong in the original draft)
+
+- [x] Remove **Tetris** from "current scope" — not built yet (move to Roadmap)
+- [x] Replace "multi-layer sprite compositing" with accurate description (attachments + z-ordered avatars + masks)
+- [x] Hub is **Pet Totoro**, not a map-style location menu
+- [x] Add missing scenes: **Grocery**, **Status**, **Acorn Catch** game modes
+- [x] Fill hardware placeholders (ESP32-WROOM, ILI9341 240×320 SPI, 20 Hz / ~20 FPS)
+- [x] Fill software stack (Arduino, TFT_eSPI, PROGMEM + line buffers, no PSRAM)
+- [x] Fill performance table with real scenarios
+- [x] Replace generic pseudocode with actual project structure
+- [x] Add repo link and Wokwi playable path
+- [x] Document mask-based touch hit testing (not just "pixel-perfect collision" in physics)
