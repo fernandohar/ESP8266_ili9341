@@ -1,0 +1,5 @@
+[wokwi]
+version = 1
+firmware = ".pio/build/esp32-wroom/firmware.bin"
+elf = ".pio/build/esp32-wroom/firmware.elf"
+gdbServerPort = 3333

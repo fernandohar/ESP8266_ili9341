@@ -1,0 +1,17 @@
+CompileFlags:
+  Compiler: /Users/Fernando/.platformio/packages/toolchain-xtensa/bin/xtensa-lx106-elf-g++
+  Remove:
+    - -mlongcalls
+    - -mtext-section-literals
+    - -free
+    - -fipa-pta
+  Add:
+    - --target=xtensa
+    - --gcc-toolchain=/Users/Fernando/.platformio/packages/toolchain-xtensa
+    - -nostdinc++
+    - -isystem
+    - /Users/Fernando/.platformio/packages/toolchain-xtensa/xtensa-lx106-elf/include/c++/10.3.0
+    - -isystem
+    - /Users/Fernando/.platformio/packages/toolchain-xtensa/xtensa-lx106-elf/include/c++/10.3.0/xtensa-lx106-elf
+    - -isystem
+    - /Users/Fernando/.platformio/packages/toolchain-xtensa/xtensa-lx106-elf/include

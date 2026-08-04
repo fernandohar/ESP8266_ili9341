@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "author": "Fernando",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "board-ili9341-cap-touch", "id": "tft", "top": -19.2, "left": 288, "attrs": {} },
+    {
+      "type": "wokwi-buzzer",
+      "id": "speaker",
+      "top": 268.8,
+      "left": 288,
+      "attrs": { "volume": "0.2" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnLeft",
+      "top": 384,
+      "left": 307.2,
+      "attrs": { "color": "green", "label": "Left" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnHome",
+      "top": 384,
+      "left": 403.2,
+      "attrs": { "color": "blue", "label": "Home" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnRight",
+      "top": 384,
+      "left": 499.2,
+      "attrs": { "color": "red", "label": "Right" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+
+    [ "esp:3V3", "tft:VCC", "red", [] ],
+    [ "esp:3V3", "tft:LED", "red", [] ],
+    [ "esp:GND.1", "tft:GND", "black", [] ],
+    [ "esp:18", "tft:SCK", "green", [] ],
+    [ "esp:23", "tft:MOSI", "green", [] ],
+    [ "esp:19", "tft:MISO", "green", [] ],
+    [ "esp:5", "tft:CS", "blue", [] ],
+    [ "esp:2", "tft:D/C", "purple", [] ],
+    [ "esp:21", "tft:SDA", "gray", [] ],
+    [ "esp:22", "tft:SCL", "gray", [] ],
+
+    [ "esp:16", "speaker:1", "orange", [] ],
+    [ "esp:GND.2", "speaker:2", "black", [] ],
+
+    [ "btnLeft:1.l", "esp:13", "green", [] ],
+    [ "btnLeft:2.l", "esp:GND.3", "black", [] ],
+    [ "btnHome:1.l", "esp:27", "blue", [] ],
+    [ "btnHome:2.l", "esp:GND.3", "black", [] ],
+    [ "btnRight:1.l", "esp:14", "green", [] ],
+    [ "btnRight:2.l", "esp:GND.3", "black", [] ]
+  ],
+  "dependencies": {}
+}

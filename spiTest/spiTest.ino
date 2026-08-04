@@ -1,7 +1,9 @@
 //#include "Adafruit_ILI9341esp.h"
+#define TOUCH_CS 2
+#include <SPI.h>
 #include <TFT_eSPI.h>
 //#include "XPT2046.h"
-#include <SPI.h>
+
 
 #include "background.h"
 #include "shrimp.h"
@@ -10,6 +12,7 @@
 #include "numbers.h"
 #include "cat.h"
 //TFT display
+
 #define SCREENWIDTH  240
 #define SCREENHEIGHT  320
 #define TFT_DC 2
