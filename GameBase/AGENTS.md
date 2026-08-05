@@ -8,10 +8,55 @@ flashing, wiring, and calibration, see [`README.md`](README.md).
 ## 1. Asset pipeline — generating sprites & backgrounds
 
 All on-screen graphics are compiled into the firmware as **PROGMEM C headers**
-(`src/*.h`) containing RGB565 pixel data. Source art lives in `assets/`; the
-generated headers live in `src/`. The conversion tools are in `tools/`.
+(`src/*.h`). Source art lives in `assets/`; the generated headers live in
+`src/`. The conversion tools are in `tools/`.
 
-### The core converter: `tools/png_to_spritesheet.py`
+### Unified sprite converter: `tools/sprite_converter.py` (recommended for new sprites)
+
+Converts PNG sprite(s) into a single header with **4-, 8-, or 16-bit** pixel
+data, a shared **RGB565 palette** (4/8-bit), one or more **bitmaps/regions** in
+the same file, and the usual **1-bit opacity mask**.
+
+```bash
+python3 tools/sprite_converter.py assets/foo.png \
+  -o src/sprite_foo.h -n sprite_foo \
+  --bpp 8 \
+  --transparent 255,0,255
+
+# Multiple frames sharing one palette:
+python3 tools/sprite_converter.py assets/foo_idle.png assets/foo_walk.png \
+  -o src/sprite_foo.h -n sprite_foo \
+  --bpp 4 --layout horizontal --regions idle,walk
+```
+
+Browser UI with live preview: open
+[`tools/sprite_converter/index.html`](tools/sprite_converter/index.html).
+
+Generated **unified** headers define:
+
+- `static const SpriteAsset sprite_foo PROGMEM` — bit depth + pointers
+- `sprite_fooPalette[]` — RGB565 LUT (4/8-bit only)
+- `sprite_fooPixels[]` — packed indices or RGB565 values
+- `sprite_fooMask[]` — 1-bit-per-pixel mask
+- `sprite_fooBitmaps[]` — sub-rectangles (`SpriteBitmapRegion`) for frames
+
+Use in scenes:
+
+```cpp
+#include "sprite_foo.h"
+SpriteSheet sheet(&sprite_foo);
+Avatar *avatar = sheet.createAvatar(
+    x, y, SpriteSheet::readBitmapRegion(sprite_fooBitmaps, 0));
+```
+
+Pass `--bpp 16 --legacy` to emit the older flat RGB565 header format instead.
+**Existing legacy headers keep working** — the renderer still supports direct
+`uint16_t` bitmap + mask without migration.
+
+Runtime support lives in [`src/SpriteAsset.h`](src/SpriteAsset.h),
+[`src/Avatar.h`](src/Avatar.h), and [`src/GameScene.cpp`](src/GameScene.cpp).
+
+### Legacy converter: `tools/png_to_spritesheet.py`
 
 This is the workhorse. It turns a PNG into a header with:
 
