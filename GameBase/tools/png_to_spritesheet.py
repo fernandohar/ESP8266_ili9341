@@ -11,9 +11,17 @@ except ImportError:
     print("Pillow is required: pip install pillow", file=sys.stderr)
     sys.exit(1)
 
-
-def rgb_to_rgb565(r, g, b):
-    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+sys.path.insert(0, os.path.dirname(__file__))
+from sprite_encoding import (  # noqa: E402
+    choose_bpp,
+    encode_sheet,
+    format_u8_array,
+    preview_stats,
+    rasterize_sheet,
+    rgb_to_rgb565,
+    write_asset_header,
+    write_legacy_header,
+)
 
 
 def is_opaque_pixel(r, g, b, a, transparent_rgb=None):
@@ -80,27 +88,28 @@ def flood_fill_digits(image, transparent_rgb=None, regions=None):
     return filled
 
 
+def load_processed_image(path, transparent_rgb=None, fill_digits=False, regions=None):
+    image = Image.open(path).convert("RGBA")
+    if fill_digits:
+        flood_fill_digits(image, transparent_rgb, regions)
+    return image
+
+
 def image_to_sheet(path_or_image, transparent_rgb=None, fill_digits=False, regions=None):
     if isinstance(path_or_image, Image.Image):
         image = path_or_image.convert("RGBA")
     else:
-        image = Image.open(path_or_image).convert("RGBA")
-    filled_pixels = set()
-    if fill_digits:
-        filled_pixels = flood_fill_digits(image, transparent_rgb, regions)
+        image = load_processed_image(path_or_image, transparent_rgb, fill_digits, regions)
     width, height = image.size
-    pixels = image.load()
+    colors, opaque_grid = rasterize_sheet(image, transparent_rgb)
 
     bitmap = []
     mask_rows = []
     for y in range(height):
         row_bits = []
         for x in range(width):
-            r, g, b, a = pixels[x, y]
-            opaque = is_opaque_pixel(r, g, b, a, transparent_rgb) or (x, y) in filled_pixels
-            bitmap.append(rgb_to_rgb565(r, g, b) if opaque else 0xFFFF)
-            row_bits.append("1" if opaque else "0")
-
+            bitmap.append(colors[y][x] if opaque_grid[y][x] else 0xFFFF)
+            row_bits.append("1" if opaque_grid[y][x] else "0")
         for i in range(0, width, 8):
             chunk = row_bits[i : i + 8]
             while len(chunk) < 8:
@@ -136,7 +145,7 @@ def write_header(
         f.write(format_array(bitmap))
         f.write("\n};\n\n")
         f.write(f"const uint8_t {name}Mask[{len(mask_rows)}] PROGMEM={{\n")
-        f.write(format_array(mask_rows, per_line=16))
+        f.write(format_u8_array(mask_rows, per_line=16))
         f.write("\n};\n")
 
         if regions:
@@ -154,6 +163,22 @@ def main():
     parser.add_argument("-o", "--output", required=True)
     parser.add_argument("-n", "--name", required=True)
     parser.add_argument(
+        "--indexed",
+        choices=["off", "auto", "4", "8", "16"],
+        default="off",
+        help="Indexed color output: off=legacy RGB565, auto picks 4/8/16 by palette size",
+    )
+    parser.add_argument(
+        "--quantize",
+        action="store_true",
+        help="Merge similar colors when the image exceeds the palette limit",
+    )
+    parser.add_argument(
+        "--max-colors",
+        type=int,
+        help="Palette cap when quantizing (defaults to the bpp limit)",
+    )
+    parser.add_argument(
         "--transparent",
         help="RGB color treated as transparent, e.g. 255,255,255",
     )
@@ -165,6 +190,10 @@ def main():
         "--fill-digits",
         action="store_true",
         help="Flood-fill hollow digit interiors with solid white",
+    )
+    parser.add_argument(
+        "--preview-out",
+        help="Write a PNG preview of the composed sheet (indexed modes only)",
     )
     args = parser.parse_args()
 
@@ -183,11 +212,42 @@ def main():
             x, y, w, h = (int(v) for v in parts[1:])
             regions.append((label, x, y, w, h))
 
-    width, height, bitmap, mask_rows = image_to_sheet(
-        args.input, transparent_rgb, args.fill_digits, regions
-    )
+    image = load_processed_image(args.input, transparent_rgb, args.fill_digits, regions)
+    width, height = image.size
+    if regions is None:
+        regions = [("full", 0, 0, width, height)]
 
-    write_header(args.output, args.name, width, height, bitmap, mask_rows, regions)
+    if args.indexed == "off":
+        _width, _height, bitmap, mask_rows = image_to_sheet(
+            image, transparent_rgb, args.fill_digits, regions
+        )
+        write_header(args.output, args.name, _width, _height, bitmap, mask_rows, regions)
+        print(f"Wrote legacy RGB565 header to {args.output}")
+        return
+
+    colors, opaque_grid = rasterize_sheet(image, transparent_rgb)
+    opaque_values = [
+        colors[y][x] for y in range(height) for x in range(width) if opaque_grid[y][x]
+    ]
+    unique_count = len(set(opaque_values))
+    bpp = choose_bpp(unique_count, args.indexed, args.quantize, args.max_colors)
+    if args.indexed in ("4", "8", "16"):
+        bpp = int(args.indexed)
+
+    encoded = encode_sheet(
+        image,
+        regions,
+        bpp,
+        transparent_rgb,
+        quantize=args.quantize,
+        max_colors=args.max_colors,
+    )
+    write_asset_header(args.output, args.name, encoded)
+    print(f"Wrote {args.output}")
+    print(preview_stats(encoded))
+    if args.preview_out:
+        encoded.preview.save(args.preview_out)
+        print(f"Preview PNG: {args.preview_out}")
 
 
 if __name__ == "__main__":

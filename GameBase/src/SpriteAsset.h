@@ -21,7 +21,7 @@ struct SpriteAsset {
   uint8_t bpp;
   uint16_t sheetWidth;
   uint16_t sheetHeight;
-  uint8_t paletteCount;
+  uint16_t paletteCount;
   const uint16_t *palette;
   const void *pixels;
   const uint8_t *mask;

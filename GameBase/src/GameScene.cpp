@@ -61,17 +61,38 @@ void GameScene :: setBackground(const uint16_t* background) {
 }
 void GameScene :: setBackground(const uint16_t* background, const uint32_t backgroundWidth) {
   this->background = background;
+  this->backgroundAsset = NULL;
   this->backgroundWidth = backgroundWidth;
+  this->backgroundXOffset = 0;
+  this->backgroundTiled = false;
+}
+void GameScene :: setBackgroundAsset(const SpriteAsset *asset) {
+  setBackgroundAsset(asset, SCREENWIDTH);
+}
+void GameScene :: setBackgroundAsset(const SpriteAsset *asset, const uint32_t assetWidth) {
+  this->backgroundAsset = asset;
+  this->background = NULL;
+  this->backgroundWidth = assetWidth;
   this->backgroundXOffset = 0;
   this->backgroundTiled = false;
 }
 void GameScene :: setBackgroundTile(const uint16_t* tile, uint16_t tileWidth, uint16_t tileHeight) {
   this->background = tile;
+  this->backgroundAsset = NULL;
   this->backgroundWidth = tileWidth;
   this->backgroundXOffset = 0;
   this->backgroundTiled = true;
   this->backgroundTileWidth = tileWidth;
   this->backgroundTileHeight = tileHeight;
+}
+void GameScene :: setBackgroundTileAsset(const SpriteAsset *tile) {
+  this->backgroundAsset = tile;
+  this->background = NULL;
+  this->backgroundWidth = tile->sheetWidth;
+  this->backgroundXOffset = 0;
+  this->backgroundTiled = true;
+  this->backgroundTileWidth = tile->sheetWidth;
+  this->backgroundTileHeight = tile->sheetHeight;
 }
 void GameScene :: setBackgroundColor(const uint16_t bgColor) {
   this->bgColor = bgColor;
@@ -100,6 +121,26 @@ void GameScene :: setBackgroundOffset(uint16_t imageXOffset) {
   backgroundXOffset = imageXOffset;
 }
 
+
+void GameScene :: drawBackgroundAsset(const SpriteAsset *asset) {
+  int8_t bufIdx = 0;
+  _tft->endWrite();
+  _tft->startWrite();
+  _tft->setAddrWindow(0, 0, SCREENWIDTH, SCREENHEIGHT);
+
+  for (uint16_t y = 0; y < SCREENHEIGHT; y++) {
+    uint16_t *destPtr = &renderbuf[bufIdx][0];
+    for (uint16_t x = 0; x < SCREENWIDTH; x++) {
+      uint16_t sheetX = (uint16_t)((backgroundXOffset + x) % asset->sheetWidth);
+      uint16_t sheetY = (uint16_t)(y % asset->sheetHeight);
+      *destPtr++ = spriteAssetPixelRgb565(asset, sheetX, sheetY);
+    }
+    _tft->pushPixels(&renderbuf[bufIdx][0], SCREENWIDTH);
+    bufIdx = 1 - bufIdx;
+  }
+
+  _tft->endWrite();
+}
 
 void GameScene :: drawBackground(const uint16_t* bitmap, uint16_t imageWidth, uint16_t imageXOffset) {
   backgroundXOffset = imageXOffset;
@@ -211,10 +252,26 @@ void GameScene :: renderFullScreen() {
 void GameScene::drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *destPtr) {
   if (backgroundTiled && backgroundTileWidth > 0 && backgroundTileHeight > 0) {
     uint16_t tileY = y % backgroundTileHeight;
+    if (backgroundAsset != NULL) {
+      for (uint32_t i = 0; i < width; ++i) {
+        uint16_t tileX = (uint16_t)((x + i) % backgroundTileWidth);
+        *destPtr++ = spriteAssetPixelRgb565(backgroundAsset, tileX, tileY);
+      }
+      return;
+    }
     uint32_t rowBase = (uint32_t)tileY * backgroundTileWidth;
     for (uint32_t i = 0; i < width; ++i) {
       uint16_t tileX = (uint16_t)((x + i) % backgroundTileWidth);
       *destPtr++ = pgm_read_word_far(background + rowBase + tileX);
+    }
+    return;
+  }
+
+  if (backgroundAsset != NULL) {
+    for (uint32_t i = 0; i < width; ++i) {
+      uint16_t sheetX = (uint16_t)((backgroundXOffset + x + i) % backgroundAsset->sheetWidth);
+      uint16_t sheetY = (uint16_t)(y % backgroundAsset->sheetHeight);
+      *destPtr++ = spriteAssetPixelRgb565(backgroundAsset, sheetX, sheetY);
     }
     return;
   }

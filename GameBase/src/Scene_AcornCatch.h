@@ -268,8 +268,8 @@ class Scene_AcornCatch : public GameScene {
     void initScene() {
       chuGroundY = CHU_FEET_Y - SPRITE_CHU_TOTORO_HEIGHT;
 
-      setBackground(acorn_catch_bg);
-      drawBackground(acorn_catch_bg);
+      setBackgroundAsset(&acorn_catch_bg);
+      drawBackgroundAsset(&acorn_catch_bg);
 
       initHudAvatars();
 
@@ -287,7 +287,8 @@ class Scene_AcornCatch : public GameScene {
       appendAvatar(enemy);
 
       for (int i = 0; i < MAX_FALLING_ACORNS; i++) {
-        acorns[i] = new Avatar(-40, SCREENHEIGHT + 20, SPRITE_ACORN_WIDTH, SPRITE_ACORN_HEIGHT, sprite_acorn, sprite_acornMask);
+        acorns[i] = new Avatar(-40, SCREENHEIGHT + 20, SPRITE_ACORN_WIDTH, SPRITE_ACORN_HEIGHT, NULL, NULL);
+        acorns[i]->setSpriteAsset(&sprite_acorn);
         acorns[i]->setVelocity(0, 0);
         acorns[i]->updateInterval = 50;
         acornActive[i] = false;
@@ -306,7 +307,8 @@ class Scene_AcornCatch : public GameScene {
 
       for (int i = 0; i < MAX_SCATTER_ACORNS; i++) {
         scatterAcorns[i] = new Avatar(-40, SCREENHEIGHT + 40, SPRITE_ACORN_WIDTH, SPRITE_ACORN_HEIGHT,
-                                      sprite_acorn, sprite_acornMask);
+                                      NULL, NULL);
+        scatterAcorns[i]->setSpriteAsset(&sprite_acorn);
         scatterAcorns[i]->setVelocity(0, 0);
         scatterAcorns[i]->updateInterval = 50;
         scatterActive[i] = false;
@@ -498,7 +500,8 @@ class Scene_AcornCatch : public GameScene {
       appendAvatar(hudScoreTens);
       appendAvatar(hudScoreOnes);
 
-      hudAcorn = new Avatar(HUD_ACORN_X, HUD_ACORN_Y, SPRITE_ACORN_WIDTH, SPRITE_ACORN_HEIGHT, sprite_acorn, sprite_acornMask);
+      hudAcorn = new Avatar(HUD_ACORN_X, HUD_ACORN_Y, SPRITE_ACORN_WIDTH, SPRITE_ACORN_HEIGHT, NULL, NULL);
+      hudAcorn->setSpriteAsset(&sprite_acorn);
       hudAcorn->setVelocity(0, 0);
       hudAcorn->updateInterval = 50;
       appendAvatar(hudAcorn);
@@ -626,7 +629,7 @@ class Scene_AcornCatch : public GameScene {
 
     // Leave the mode-select screen and start the actual round.
     void startGame(unsigned long now) {
-      drawBackground(acorn_catch_bg);
+      drawBackgroundAsset(&acorn_catch_bg);
       resetHudCache();
       beginPlay(now);
       updateHudAvatars(now);

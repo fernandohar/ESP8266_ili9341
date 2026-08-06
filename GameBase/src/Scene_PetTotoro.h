@@ -259,8 +259,8 @@ class Scene_PetTotoro : public GameScene {
     }
 
     void initScene() {
-      setBackground(acorn_catch_bg);
-      drawBackground(acorn_catch_bg);
+      setBackgroundAsset(&acorn_catch_bg);
+      drawBackgroundAsset(&acorn_catch_bg);
 
       pets[0].avatar = NULL;
       menuOpen = false;
@@ -346,6 +346,7 @@ class Scene_PetTotoro : public GameScene {
 
     struct Pet {
       Avatar *avatar;
+      const SpriteAsset *asset;
       const uint16_t *bitmap;
       const uint8_t *mask;
       uint16_t sheetW;
@@ -422,17 +423,42 @@ class Scene_PetTotoro : public GameScene {
           break;
         case PET_STAGE_BABY:
         default:
-          setupPet(pets[0], sprite_totoro_baby, sprite_totoro_babyMask,
-                   SPRITE_TOTORO_BABY_WIDTH, SPRITE_TOTORO_BABY_HEIGHT,
-                   sprite_totoro_babyRegions, 75, 81);
+          setupPet(pets[0], &sprite_totoro_baby, SPRITE_TOTORO_BABY_SHEET_WIDTH,
+                   SPRITE_TOTORO_BABY_SHEET_HEIGHT, sprite_totoro_babyRegions, 75, 81);
           pets[0].hasBlink = true;  // baby sheet has an eyes-closed frame
           break;
       }
     }
 
+    void setupPet(Pet &p, const SpriteAsset *asset, uint16_t sheetW, uint16_t sheetH,
+                  const SpriteSheetRegion *regions, uint16_t frameW, uint16_t frameH) {
+      p.asset = asset;
+      p.bitmap = NULL;
+      p.mask = NULL;
+      p.sheetW = sheetW;
+      p.sheetH = sheetH;
+      p.regions = regions;
+      p.frameW = frameW;
+      p.frameH = frameH;
+      p.pose = TOTORO_POSE_STAND;
+      p.walkFrameB = false;
+      p.walkFrameMs = millis();
+      p.nextPoseMs = millis() + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
+      p.hasBlink = false;
+      p.blinking = false;
+      p.nextBlinkMs = millis() + PET_BLINK_MIN_MS + random(0, PET_BLINK_MAX_MS - PET_BLINK_MIN_MS);
+      p.blinkEndMs = 0;
+      int16_t x = (SCREENWIDTH - (int16_t)frameW) / 2;
+      int16_t y = PET_GROUND_Y - (int16_t)frameH;
+      SpriteSheet sheet(asset);
+      p.avatar = sheet.createAvatar(x, y, SpriteSheet::readRegion(regions, TOTORO_RGN_STAND));
+      appendAvatar(p.avatar);
+    }
+
     void setupPet(Pet &p, const uint16_t *bitmap, const uint8_t *mask,
                   uint16_t sheetW, uint16_t sheetH, const SpriteSheetRegion *regions,
                   uint16_t frameW, uint16_t frameH) {
+      p.asset = NULL;
       p.bitmap = bitmap;
       p.mask = mask;
       p.sheetW = sheetW;
@@ -477,8 +503,13 @@ class Scene_PetTotoro : public GameScene {
       if (p.avatar == NULL) {
         return;
       }
-      SpriteSheet sheet(p.bitmap, p.mask, p.sheetW, p.sheetH);
-      sheet.applyRegion(p.avatar, SpriteSheet::readRegion(p.regions, regionIndex));
+      if (p.asset != NULL) {
+        SpriteSheet sheet(p.asset);
+        sheet.applyRegion(p.avatar, SpriteSheet::readRegion(p.regions, regionIndex));
+      } else {
+        SpriteSheet sheet(p.bitmap, p.mask, p.sheetW, p.sheetH);
+        sheet.applyRegion(p.avatar, SpriteSheet::readRegion(p.regions, regionIndex));
+      }
       p.avatar->requestRedraw();
     }
 

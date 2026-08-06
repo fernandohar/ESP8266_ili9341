@@ -78,11 +78,67 @@ python3 tools/png_to_spritesheet.py assets/foo.png \
   --fill-digits                      # optional: flood-fill hollow interiors
 ```
 
+**Indexed color** (same shared encoder as `sprite_converter.py`):
+
+```bash
+python3 tools/png_to_spritesheet.py assets/foo.png \
+  -o src/sprite_foo.h -n sprite_foo \
+  --indexed auto          # off | auto | 4 | 8 | 16 \
+  --quantize              # merge colors when palette is too large \
+  --max-colors 16         # optional cap when quantizing
+```
+
 Key flags:
 - `--transparent R,G,B` — treat a near-match color as transparent (tolerance ±12).
 - `--regions "label,x,y,w,h;..."` — emit region metadata for sheets.
 - `--fill-digits` — flood-fill hollow glyph interiors solid white (used for the
   number/letter sheets).
+- `--indexed auto` — pick 4-bit (≤16 colors), 8-bit (≤256), or fall back to 16-bit.
+- `--quantize` — reduce a large palette to fit the chosen bit depth (needed for
+  photo-like backgrounds).
+
+### Re-indexing existing headers (no PNG required)
+
+When source PNGs are unavailable, convert legacy RGB565 headers in place:
+
+```bash
+python3 tools/reindex_header.py src/sprite_totoro_baby.h --indexed auto
+python3 tools/reindex_header.py src/image_acorn_catch_bg.h --indexed 8 --quantize
+```
+
+Estimate savings across all legacy headers:
+
+```bash
+python3 tools/compare_indexed_savings.py
+```
+
+Shared encoding logic lives in [`tools/sprite_encoding.py`](tools/sprite_encoding.py).
+
+### Tamagotchi-style art guidelines
+
+Solid pixel art with thick outlines and flat fills compress best:
+
+- **≤16 unique opaque colors** → `--indexed 4` or `--indexed auto` (4-bit)
+- **17–256 colors** → `--indexed 8` or `--indexed auto`
+- **Gradients / photos** → `--indexed 8 --quantize` or keep `--indexed off` (RGB565)
+- Always keep the **1-bit mask**; do not rely on palette index 0 for transparency
+  (opaque white is still `0xFFFF` in legacy art).
+- Pre-process PNGs in Gimp: *Image → Mode → Indexed* with a small fixed palette
+  before converting, for maximum flash savings.
+
+### Indexed backgrounds
+
+Full-screen backgrounds can use `SpriteAsset` headers and:
+
+```cpp
+setBackgroundAsset(&acorn_catch_bg);
+drawBackgroundAsset(&acorn_catch_bg);   // one-time full repaint
+```
+
+Tiled backgrounds can use `setBackgroundTileAsset(&grass_tile)` when converted.
+
+Already migrated in-tree (8-bit indexed): `sprite_totoro_baby.h`, `sprite_acorn.h`,
+`image_acorn_catch_bg.h`. Flash usage dropped ~85 KB vs the prior RGB565 versions.
 
 ### Purpose-built generators (wrap the core converter)
 
