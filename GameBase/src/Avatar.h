@@ -29,7 +29,6 @@ class Avatar {
     friend class GameScene;
     friend class Attachment;
   public:
-    int id = 0;
     float x = 0;
     float y = 0;
 
@@ -40,8 +39,6 @@ class Avatar {
     uint16_t breathAmount = 1; //default
     Vec2 velocity;
     int updateInterval = 0; //in milli seconds
-    const uint16_t *bitmap;
-    const uint8_t *mask;
     const uint16_t* bitmaps [50]; //suppose at most 50 frames per avatar;
     const uint8_t* masks [50]; 
     volatile byte numOfFrames = 0;
@@ -51,7 +48,7 @@ class Avatar {
     
     Avatar() {};
     Avatar(float initX, float initY, uint16_t _width, uint16_t _height, const uint16_t *_bitmap, const uint8_t *_mask) :
-      x(initX), y(initY), width(_width), height(_height), bitmap(_bitmap), mask(_mask), previousRenderedX(initX), previousRenderedY(initY) {
+      x(initX), y(initY), width(_width), height(_height), previousRenderedX(initX), previousRenderedY(initY) {
       this->velocity = Vec2();
       bitmaps[0] = _bitmap;
       masks[0] = _mask;
