@@ -4,6 +4,7 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include "Avatar.h"
+#include "SpriteAsset.h"
 #include "SoundPlayer.h"
 #include "pitches.h"
 #define MAX_AVATAR 50
@@ -21,10 +22,13 @@ class GameScene {
 
     void setBackground(const uint16_t* background);
     void setBackground(const uint16_t* background, const uint32_t backgroundWidth);
+    void setBackgroundAsset(const SpriteAsset *asset);
+    void setBackgroundAsset(const SpriteAsset *asset, uint32_t assetWidth);
     // Use a small bitmap as a repeating (tiled) background: it is wrapped with
     // modulo indexing across the whole screen in both X and Y, so a tiny tile
     // (e.g. 50x50) can fill 240x320 without a full-screen PROGMEM image.
     void setBackgroundTile(const uint16_t* tile, uint16_t tileWidth, uint16_t tileHeight);
+    void setBackgroundTileAsset(const SpriteAsset *tile);
     void setBackgroundColor(const uint16_t bgColor);
     void setBackgroundOffset(uint16_t imageXOffset);
     static uint16_t rgb565(float r, float g, float b) {
@@ -67,6 +71,7 @@ class GameScene {
     int numAvatar = 0;
     uint16_t renderbuf[2][SCREENWIDTH];
     const uint16_t *background = NULL;
+    const SpriteAsset *backgroundAsset = NULL;
     uint32_t backgroundWidth;
     uint16_t backgroundXOffset;
     uint16_t bgColor;
@@ -78,6 +83,7 @@ class GameScene {
     void drawBackground(const uint16_t* bitmap) {
       _tft->pushImage( 0, 0, SCREENWIDTH, SCREENHEIGHT, bitmap);
     }
+    void drawBackgroundAsset(const SpriteAsset *asset);
     uint32_t getBackgoundMemoryPosition( uint16_t x, uint16_t y);
     //Support Extra wide background image, with horizontal cropping
     void drawBackground(const uint16_t* bitmap, uint16_t imageWidth, uint16_t imageXOffset);

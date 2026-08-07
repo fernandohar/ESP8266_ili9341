@@ -6,35 +6,42 @@ launches four mini-games plus a Settings screen with touch calibration.
 
 ## Scenes
 
-| Scene | What it is |
-|-------|------------|
-| **Hub** | Illustrated map menu; select a location with Left/Right + Home, or tap it. All games return here via **Home**. |
-| **Pet Totoro** | Virtual pet: walk Totoro around, clean up soot, and manage stats that decay over time. |
-| **Acorn Catch** | Catch falling acorns before Chu (the rival) grabs them; dodge falling soot; acorns speed up over time and the clock extends as you collect. Reach the target to win. |
-| **Tic-Tac-Toe** | Play 1P vs. a blocking/winning CPU or 2P hot-seat, on a grass board with Mei/Cat-Bus tokens. |
-| **Whack-a-Mole** | Timed rounds: tap the soot-moles as they pop up across five levels. |
-| **Settings** | Touch calibration (see below). |
 
-> For contributors / AI agents: see [`AGENTS.md`](AGENTS.md) for the asset
+| Scene                      | What it is                                                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Home (Scene_PetTotoro)** | Home screen. Our pet, will walk around in the home screen.To start interaction, press "Home" button or tap Pet to launch menu                                       |
+| **Acorn Catch**            | Catch falling acorns before Chu (the rival) grabs them; dodge falling soot; acorns speed up over time and the clock extends as you collect. Reach the target to win. |
+| **Tic-Tac-Toe**            | Play 1P vs. a blocking/winning CPU or 2P hot-seat, on a grass board with Mei/Cat-Bus tokens.                                                                         |
+| **Whack-a-Mole**           | Timed rounds: tap the soot-moles as they pop up across five levels.                                                                                                  |
+| **Settings**               | Touch calibration (see below).                                                                                                                                       |
+
+
+> For contributors / AI agents: see `[AGENTS.md](AGENTS.md)` for the asset
 > (sprite/background) generation pipeline and the rendering rules
 > (`renderScene()` vs `renderFullScreen()`).
 
 ---
 
+
+
 ## Build environments
 
-This project has two PlatformIO environments. **`esp32-hw` is the default.**
+This project has two PlatformIO environments. `esp32-hw` **is the default.**
 
-| Environment    | Target                     | Touch driver                | Notes |
-|----------------|----------------------------|-----------------------------|-------|
-| `esp32-hw`     | **Physical board**         | XPT2046 (resistive, SPI)    | Default. `pio run` builds this. |
-| `esp32-wroom`  | **Wokwi simulator**        | FT6206 (capacitive, I2C)    | Build with `-e esp32-wroom`. Calibration is compiled out. |
+
+| Environment   | Target              | Touch driver             | Notes                                                     |
+| ------------- | ------------------- | ------------------------ | --------------------------------------------------------- |
+| `esp32-hw`    | **Physical board**  | XPT2046 (resistive, SPI) | Default. `pio run` builds this.                           |
+| `esp32-wroom` | **Wokwi simulator** | FT6206 (capacitive, I2C) | Build with `-e esp32-wroom`. Calibration is compiled out. |
+
 
 The two builds differ by the `-D WOKWI_CAP_TOUCH` flag (present only in
 `esp32-wroom`). Never flash `esp32-wroom` to the physical board — it uses a
 different touch controller and skips calibration.
 
 ---
+
+
 
 ## Flash to the physical board
 
@@ -59,9 +66,11 @@ close the monitor terminal), then upload again.
 
 ---
 
+
+
 ## Run in the Wokwi simulator
 
-The simulator uses [`diagram.json`](diagram.json) and [`wokwi.toml`](wokwi.toml)
+The simulator uses `[diagram.json](diagram.json)` and `[wokwi.toml](wokwi.toml)`
 (which points at the `esp32-wroom` build output).
 
 ```bash
@@ -76,52 +85,59 @@ build `-e esp32-wroom` before starting the simulator.
 
 ---
 
+
+
 ## Wiring — Display (ILI9341 + XPT2046)
 
 The display and the touch controller **share the SPI clock and MOSI** (`SCK` /
 `MOSI`). Only the chip-select lines differ: `CS` for the display, `T_CS` for touch.
 
-> **⚠️ Do NOT connect the LCD's `SDO`/`MISO` pin.** `GPIO19` (MISO) is used by the
+> **⚠️ Do NOT connect the LCD's** `SDO`**/**`MISO` **pin.** `GPIO19` (MISO) is used by the
 > **touch controller only** (`T_DO`). Wiring the LCD `SDO` here breaks touch — see
 > the [MISO note](#miso-warning) below.
 
-![Display wiring: ESP32 to ILI9341 + XPT2046](docs/images/wiring_display.png)
+Display wiring: ESP32 to ILI9341 + XPT2046
 
 *Illustration only — the table below is the source of truth.*
 
-| Display pin      | ESP32 GPIO | Build flag   | Wire (in image) |
-|------------------|------------|--------------|-----------------|
-| VCC              | 3V3        | —            | red             |
-| LED (backlight)  | 3V3        | —            | red             |
-| GND              | GND        | —            | black           |
-| SCK              | GPIO18     | `TFT_SCLK`   | yellow (shared) |
-| SDI (MOSI)       | GPIO23     | `TFT_MOSI`   | green  (shared) |
-| SDO (MISO)       | **DO NOT CONNECT** | `TFT_MISO` | — (see note) |
-| CS               | GPIO5      | `TFT_CS`     | orange          |
-| DC               | GPIO2      | `TFT_DC`     | purple          |
-| RESET            | GPIO4      | `TFT_RST`    | white           |
-| T_CLK            | GPIO18     | (shared SCK) | yellow (shared) |
-| T_DIN (MOSI)     | GPIO23     | (shared MOSI)| green  (shared) |
-| T_DO  (MISO)     | GPIO19     | `TFT_MISO`   | blue (touch only) |
-| T_CS             | GPIO15     | `TOUCH_CS`   | gray            |
-| T_IRQ            | *not connected* | —       | —               |
+
+| Display pin     | ESP32 GPIO         | Build flag    | Wire (in image)   |
+| --------------- | ------------------ | ------------- | ----------------- |
+| VCC             | 3V3                | —             | red               |
+| LED (backlight) | 3V3                | —             | red               |
+| GND             | GND                | —             | black             |
+| SCK             | GPIO18             | `TFT_SCLK`    | yellow (shared)   |
+| SDI (MOSI)      | GPIO23             | `TFT_MOSI`    | green (shared)    |
+| SDO (MISO)      | **DO NOT CONNECT** | `TFT_MISO`    | — (see note)      |
+| CS              | GPIO5              | `TFT_CS`      | orange            |
+| DC              | GPIO2              | `TFT_DC`      | purple            |
+| RESET           | GPIO4              | `TFT_RST`     | white             |
+| T_CLK           | GPIO18             | (shared SCK)  | yellow (shared)   |
+| T_DIN (MOSI)    | GPIO23             | (shared MOSI) | green (shared)    |
+| T_DO (MISO)     | GPIO19             | `TFT_MISO`    | blue (touch only) |
+| T_CS            | GPIO15             | `TOUCH_CS`    | gray              |
+| T_IRQ           | *not connected*    | —             | —                 |
+
 
 Notes:
-- <a id="miso-warning"></a>**Do NOT connect the LCD's `SDO`/`MISO` pin.** `GPIO19`
-  is wired to the touch controller's `T_DO` **only**. Most ILI9341 modules do not
-  tri-state the LCD `SDO` output when the LCD is deselected, so if the LCD `SDO` is
-  also wired to `GPIO19` it fights the XPT2046 on every touch read: the panel still
-  draws fine, but touch reads come back as garbage (low `Z`, pinned `X`/`Y`) and
-  touch appears completely dead. The firmware never reads pixels back from the
-  panel, so the LCD `MISO` line is not needed. **This is the #1 cause of "touch
-  stopped working" after rewiring.**
+
+- **Do NOT connect the LCD's** `SDO`**/**`MISO` **pin.** `GPIO19`
+is wired to the touch controller's `T_DO` **only**. Most ILI9341 modules do not
+tri-state the LCD `SDO` output when the LCD is deselected, so if the LCD `SDO` is
+also wired to `GPIO19` it fights the XPT2046 on every touch read: the panel still
+draws fine, but touch reads come back as garbage (low `Z`, pinned `X`/`Y`) and
+touch appears completely dead. The firmware never reads pixels back from the
+panel, so the LCD `MISO` line is not needed. **This is the #1 cause of "touch
+stopped working" after rewiring.**
 - `T_IRQ` is left unconnected. Touch is polled via TFT_eSPI `getTouch()`, so the
-  interrupt line is not required.
+interrupt line is not required.
 - Pin numbers live in `platformio.ini` under `[env:esp32-hw]` `build_flags`.
 - If you see resets/brownouts when the backlight is on, the 3V3 rail may be
-  marginal over USB — power the display from a stronger 3V3 source.
+marginal over USB — power the display from a stronger 3V3 source.
 
 ---
+
+
 
 ## Wiring — Physical buttons (not required, optional)
 
@@ -129,13 +145,15 @@ Three momentary push buttons drive the menu (Left / Home / Right). They are
 **active-LOW with the ESP32 internal pull-ups**, so each button just connects a
 GPIO to GND — **no external resistors needed**.
 
-![Button wiring: 3 push buttons to ESP32](docs/images/wiring_buttons.png)
+Button wiring: 3 push buttons to ESP32
+
 
 | Button | ESP32 GPIO | Firmware constant (`src/Input.h`) |
-|--------|------------|-----------------------------------|
+| ------ | ---------- | --------------------------------- |
 | LEFT   | GPIO13     | `BTN_LEFT_PIN`                    |
 | HOME   | GPIO27     | `BTN_HOME_PIN`                    |
 | RIGHT  | GPIO14     | `BTN_RIGHT_PIN`                   |
+
 
 Each button: one leg → the listed GPIO, the other leg → a common **GND** rail.
 
@@ -151,6 +169,8 @@ recommended.
 
 ---
 
+
+
 ## Touch calibration
 
 Calibration data (`calData[5]`) is stored in ESP32 **NVS** and survives reboots.
@@ -163,17 +183,16 @@ corner arrow** as it appears.
 There are four ways — you can never get locked out:
 
 1. **Serial command (most reliable — needs neither touch nor buttons).**
-   Open the serial monitor at 115200 and send **`c`** (or `C`). The device
+  Open the serial monitor at 115200 and send `c` (or `C`). The device
    calibrates, saves, and reboots.
-   ```bash
-   pio device monitor      # then type: c  <Enter>
-   ```
 2. **Boot combo (hardware escape hatch).** Hold **LEFT + RIGHT** while pressing
-   the board's reset/EN button. Works even when the stored calibration is
+  the board's reset/EN button. Works even when the stored calibration is
    completely wrong (calibration reads raw ADC values, not the stored mapping).
 3. **Settings screen.** From the hub, open **Settings**, then tap the
-   **"Calibrate Touch"** button — or press the **LEFT** button while in Settings.
+  **"Calibrate Touch"** button — or press the **LEFT** button while in Settings.
 4. **Empty NVS.** After `pio run -t erase`, the next boot auto-calibrates.
+
+
 
 ### Factory-reset the calibration
 
@@ -184,3 +203,4 @@ pio run -t upload    # reflash; next boot auto-calibrates
 
 > Only the `esp32-hw` build has calibration. In `esp32-wroom` (Wokwi) the touch
 > is capacitive and needs no calibration, so all the above is compiled out.
+

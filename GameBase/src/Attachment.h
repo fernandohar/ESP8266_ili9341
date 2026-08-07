@@ -12,6 +12,12 @@ class Attachment : public Avatar {
       y = parent->y + parentY;
     };
 
+    // Re-anchor on the parent, e.g. when a pose swap moves the face.
+    void setAttachOffset(int16_t parentX, int16_t parentY) {
+      _attachToParentX = parentX;
+      _attachToParentY = parentY;
+    }
+
     void updatePos(unsigned long currentTime) {
       this->x = _parent->x + _attachToParentX;
       if (_parent->_enableBreathing) {
