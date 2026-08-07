@@ -87,6 +87,39 @@ class SpriteText {
       int x = (SCREENWIDTH - width) / 2;
       return buildLine(scene, text, x, y, out, maxOut, gap);
     }
+
+    // Lay text out over glyph Avatars the scene already owns, instead of
+    // allocating a fresh set. A scene that shows more than one message over its
+    // lifetime must use this: appendAvatar() has no counterpart, so repeated
+    // buildLine() calls would grow the avatar list until it overflows.
+    // Returns how many of the pool were used; the caller parks the remainder.
+    static int layoutLine(const char *text, int x, int y, Avatar *pool[], int poolSize, int gap = 2) {
+      int count = 0;
+      int cursor = x;
+      SpriteSheet sheet = letterSheet();
+
+      for (const char *p = text; *p != '\0' && count < poolSize; ++p) {
+        if (*p == ' ') {
+          cursor += SPRITE_LETTERS_CELL_W / 2;
+          continue;
+        }
+        int index = letterRegionIndex(*p);
+        if (index < 0) {
+          continue;
+        }
+        sheet.applyRegion(pool[count], SpriteSheet::readRegion(sprite_lettersRegions, index));
+        pool[count]->setPos((float)cursor, (float)y);
+        pool[count]->requestRedraw();
+        count++;
+        cursor += SPRITE_LETTERS_CELL_W + gap;
+      }
+      return count;
+    }
+
+    static int layoutCenteredLine(const char *text, int y, Avatar *pool[], int poolSize, int gap = 2) {
+      int width = measureWidth(text, gap);
+      return layoutLine(text, (SCREENWIDTH - width) / 2, y, pool, poolSize, gap);
+    }
 };
 
 #endif

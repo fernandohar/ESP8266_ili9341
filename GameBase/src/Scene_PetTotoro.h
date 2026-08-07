@@ -98,12 +98,12 @@
 #define PET_CARE_XP_BATHE 5
 
 // --- Mini-game reward hand-off (applied on return to the home) ---
+// The coin half of the payout lives in GameResult.h, since the coin reward
+// screen banks it before the player ever gets back here.
 #define GAME_WIN_HAPPINESS 12
 #define GAME_LOSS_HAPPINESS 4
 #define GAME_WIN_CARE_XP 15
 #define GAME_LOSS_CARE_XP 5
-#define GAME_WIN_DEFAULT_COINS 5
-#define GAME_LOSS_CONSOLATION_COINS 2
 #define PET_REWARD_TOAST_MS 2200
 
 enum PetMenuItem {
@@ -1306,21 +1306,23 @@ class Scene_PetTotoro : public GameScene {
       addSound(NOTE_G5, noteDurationMs(16, 900));
     }
 
-    // Consume a pending mini-game result: grant coins, happiness and care-XP
-    // (a win pays more; a loss still gives a small consolation) and queue a
-    // brief toast. Safe to call every entry; it no-ops without a pending result.
+    // Consume a pending mini-game result: grant happiness and care-XP (a win
+    // pays more; a loss still gives a small consolation) and queue a brief
+    // toast. Safe to call every entry; it no-ops without a pending result.
+    //
+    // Coins are normally already banked and announced by the coin reward screen,
+    // so takeCoins() usually returns 0 here and the toast is just the verdict.
+    // It still pays out if a game ever hands back without that screen.
     void applyGameReward() {
       if (!GameResult::pending()) {
         return;
       }
       GameOutcome outcome = GameResult::outcome();
-      int reportedCoins = GameResult::coins();
       int reportedHappiness = GameResult::happiness();
-      int coins;
+      int coins = GameResult::takeCoins();
       int happiness;
       const char *label;
       if (outcome == GAME_RESULT_WIN) {
-        coins = (reportedCoins >= 0) ? reportedCoins : GAME_WIN_DEFAULT_COINS;
         happiness = (reportedHappiness >= 0) ? reportedHappiness : GAME_WIN_HAPPINESS;
         PetTotoroState::addCareXP(GAME_WIN_CARE_XP);
         label = "Win!";
@@ -1328,9 +1330,6 @@ class Scene_PetTotoro : public GameScene {
         addSound(NOTE_G5, noteDurationMs(10, 900));
         addSound(NOTE_C6, noteDurationMs(10, 900));
       } else {
-        // A loss always pays the fixed consolation (games report 0 coins on a
-        // loss); only happiness can be overridden per game.
-        coins = GAME_LOSS_CONSOLATION_COINS;
         happiness = (reportedHappiness >= 0) ? reportedHappiness : GAME_LOSS_HAPPINESS;
         PetTotoroState::addCareXP(GAME_LOSS_CARE_XP);
         label = "Nice try!";
@@ -1340,8 +1339,10 @@ class Scene_PetTotoro : public GameScene {
       PetTotoroState::adjustHappiness(happiness);
       if (coins > 0) {
         GameProgress::addCoins(coins);
+        snprintf(rewardToast, sizeof(rewardToast), "%s +%d coins", label, coins);
+      } else {
+        snprintf(rewardToast, sizeof(rewardToast), "%s", label);
       }
-      snprintf(rewardToast, sizeof(rewardToast), "%s +%d coins", label, coins);
       rewardToastUntilMs = millis() + PET_REWARD_TOAST_MS;
       GameResult::clear();
     }

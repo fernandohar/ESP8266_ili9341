@@ -57,6 +57,9 @@ static const int16_t TTT_ROW_CY[3] = { 101, 168, 242 };
 // Status pill sits in the grass strip below the board.
 #define TTT_STATUS_CY 300
 #define TTT_STATUS_H 26
+// The result pill carries a second line, so it reaches further up the strip.
+#define TTT_RESULT_Y 276
+#define TTT_RESULT_H 42
 
 // Mode-select buttons.
 #define TTT_BTN_W 184
@@ -81,9 +84,11 @@ class Scene_TicTacToe : public GameScene {
     void update(boolean isTouching, boolean *needChangeScene, int *nextSceneIndex) {
       const GameInput &input = Input::current();
 
+      // Home ends the visit and collects the payout for every round played; a
+      // tap after a result goes back to the mode select for another game.
       if (input.homePressed) {
         *needChangeScene = true;
-        *nextSceneIndex = SCENE_PET_TOTORO;
+        *nextSceneIndex = gameExitSceneIndex();
         return;
       }
 
@@ -459,8 +464,16 @@ class Scene_TicTacToe : public GameScene {
       drawStatusPill(text, colorWoodDark(), colorCream());
     }
 
+    // Taller than the turn pill so the verdict can carry the replay hint: from
+    // here a tap goes back to the mode select and Home finishes the visit.
     void drawResult(const char *msg) {
-      drawStatusPill(msg, rgb565(60, 40, 20), rgb565(255, 235, 120));
+      uint16_t bg = rgb565(60, 40, 20);
+      _tft->fillRoundRect(SCREENWIDTH / 2 - 108, TTT_RESULT_Y, 216, TTT_RESULT_H, 8, bg);
+      _tft->setTextDatum(MC_DATUM);
+      _tft->setTextColor(rgb565(255, 235, 120), bg);
+      _tft->drawString(msg, SCREENWIDTH / 2, TTT_RESULT_Y + 13, 2);
+      _tft->drawString("Tap to replay", SCREENWIDTH / 2, TTT_RESULT_Y + 30, 2);
+      _tft->setTextDatum(TL_DATUM);
     }
 
     void drawStatusPill(const char *text, uint16_t bg, uint16_t fg) {

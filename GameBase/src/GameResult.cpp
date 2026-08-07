@@ -1,13 +1,17 @@
 #include "GameResult.h"
 
 static GameOutcome s_outcome = GAME_RESULT_NONE;
-static int s_coins = -1;
+static int s_coinsOwed = 0;
 static int s_happiness = -1;
 
 void GameResult::report(GameOutcome outcome, int coins, int happiness) {
   s_outcome = outcome;
-  s_coins = coins;
   s_happiness = happiness;
+  if (outcome == GAME_RESULT_WIN) {
+    s_coinsOwed += (coins >= 0) ? coins : GAME_WIN_DEFAULT_COINS;
+  } else if (outcome == GAME_RESULT_LOSS) {
+    s_coinsOwed += GAME_LOSS_CONSOLATION_COINS;
+  }
 }
 
 bool GameResult::pending() {
@@ -18,8 +22,10 @@ GameOutcome GameResult::outcome() {
   return s_outcome;
 }
 
-int GameResult::coins() {
-  return s_coins;
+int GameResult::takeCoins() {
+  int owed = s_coinsOwed;
+  s_coinsOwed = 0;
+  return owed;
 }
 
 int GameResult::happiness() {
@@ -28,6 +34,6 @@ int GameResult::happiness() {
 
 void GameResult::clear() {
   s_outcome = GAME_RESULT_NONE;
-  s_coins = -1;
+  s_coinsOwed = 0;
   s_happiness = -1;
 }

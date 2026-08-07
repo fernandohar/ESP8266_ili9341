@@ -13,5 +13,6 @@
 #define SCENE_STATUS 5
 #define SCENE_GROCERY 6
 #define SCENE_CAT_BUS_CROSS 7
+#define SCENE_COIN_REWARD 8
 
 #endif

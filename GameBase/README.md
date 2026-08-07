@@ -13,6 +13,8 @@ launches four mini-games plus a Settings screen with touch calibration.
 | **Acorn Catch**            | Catch falling acorns before Chu (the rival) grabs them; dodge falling soot; acorns speed up over time and the clock extends as you collect. Reach the target to win. |
 | **Tic-Tac-Toe**            | Play 1P vs. a blocking/winning CPU or 2P hot-seat, on a grass board with Mei/Cat-Bus tokens.                                                                         |
 | **Whack-a-Mole**           | Timed rounds: tap the soot-moles as they pop up across five levels.                                                                                                  |
+| **Cat Bus Cross**          | Frogger-style: hop Mei up five soot-patrolled lanes to the Goal sign, with three attempts per round.                                                                 |
+| **Coin Reward**            | Shared payout screen. Every mini-game exits through it, banking and announcing the coins earned before returning home.                                               |
 | **Settings**               | Touch calibration (see below).                                                                                                                                       |
 
 

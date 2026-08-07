@@ -62,6 +62,9 @@
 #define CBC_SCORE_GAP 2
 #define CBC_BANNER_POOL 8
 #define CBC_BANNER_Y 150
+// "Tap to replay" pill, sat just under the banner glyphs (which are 20px tall).
+#define CBC_HINT_Y 174
+#define CBC_HINT_H 22
 
 static const int16_t CBC_LANE_TOP[CBC_LANE_COUNT] = {190, 160, 132, 103, 75};
 static const int16_t CBC_LANE_BOTTOM[CBC_LANE_COUNT] = {218, 186, 156, 128, 100};
@@ -85,9 +88,10 @@ class Scene_CatBusCross : public GameScene {
       unsigned long now = millis();
 
       if (state == CBC_STATE_WON || state == CBC_STATE_LOST) {
+        // Home ends the visit and collects the payout; a tap starts another go.
         if (input.homePressed) {
           *needChangeScene = true;
-          *nextSceneIndex = SCENE_PET_TOTORO;
+          *nextSceneIndex = gameExitSceneIndex();
         } else if (isTouching && !wasTouching) {
           resetRound(now);
         }
@@ -445,6 +449,20 @@ class Scene_CatBusCross : public GameScene {
       showBanner(attemptsLeft == 2 ? "OOPS" : "LAST");
     }
 
+    // Drawn straight to the TFT under the sprite banner. Flush the pending
+    // avatar moves first, otherwise the next renderScene() would repaint Mei's
+    // old footprint straight through the pill. After that the board is frozen,
+    // and starting another round repaints the whole background anyway.
+    void showEndHint() {
+      renderScene();
+      uint16_t bg = rgb565(46, 32, 18);
+      _tft->fillRoundRect(30, CBC_HINT_Y, SCREENWIDTH - 60, CBC_HINT_H, 6, bg);
+      _tft->setTextDatum(MC_DATUM);
+      _tft->setTextColor(rgb565(255, 226, 150), bg);
+      _tft->drawString("Tap to replay", SCREENWIDTH / 2, CBC_HINT_Y + CBC_HINT_H / 2, 2);
+      _tft->setTextDatum(TL_DATUM);
+    }
+
     void winRound() {
       state = CBC_STATE_WON;
       int reward = 4 + attemptsLeft * 2;
@@ -453,6 +471,7 @@ class Scene_CatBusCross : public GameScene {
       addSound(NOTE_E5, noteDurationMs(8, 800));
       addSound(NOTE_G5, noteDurationMs(8, 800));
       showBanner("GOAL!");
+      showEndHint();
     }
 
     void loseRound() {
@@ -461,6 +480,7 @@ class Scene_CatBusCross : public GameScene {
       addSound(NOTE_A3, noteDurationMs(4, 600));
       resetPlayer();
       showBanner("OVER");
+      showEndHint();
     }
 };
 
