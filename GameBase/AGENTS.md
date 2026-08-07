@@ -148,11 +148,14 @@ handling:
 
 | Script | Input → Output | What it adds |
 |--------|----------------|--------------|
-| `generate_totoro_pet_sheet.py` | `assets/totoro_parts_source.png` → `src/sprite_totoro_pet.h` | The source is a *worksheet*: 7 blank-faced bodies on the top row, 5 detachable eye/mouth strips below, then the artist's combined reference. Keeps bodies and faces as **separate cells** (7 + 5) and lets the scene hang the face on the body as an `Attachment`, so a new expression costs one small cell instead of a whole extra set of poses. Bodies are bottom-aligned in the cell (feet on the ground line) and centred on the **eye centre**, which makes every cell mirror-symmetric so the walk-right animation is just `setFlipX(true)`. Also emits `..._EYE_REGION`, `..._EYE_OFFSET_X` and an `EyeOffsetY[]` table that the scene uses to place the face per pose. See "Totoro pet poses & faces" below. |
+| `generate_totoro_pet_sheet.py` | `assets/totoro_parts_source.png` → `src/sprite_totoro_pet.h` | The source is a *worksheet*: 7 blank-faced bodies on the top row, 5 detachable eye/mouth strips below, then the artist's combined reference. Keeps bodies and faces as **separate cells** (7 + 5) and lets the scene hang the face on the body as an `Attachment`, so a new expression costs one small cell instead of a whole extra set of poses. Bodies are bottom-aligned in the cell (feet on the ground line) and centred on the **eye centre**, which makes every cell mirror-symmetric so the walk-right animation is just `setFlipX(true)`. Also emits `..._EYE_REGION` plus `EyeBase[]` / `EyeOffsetX[]` / `EyeOffsetY[]` tables that the scene uses to place the face per pose. See "Totoro pet poses & faces" below. |
+| `generate_totoro_adult_worksheet.py` | `assets/totoro_adult_parts_source.png` → `assets/totoro_adult_worksheet.png` | Seeds the **hand-editable** worksheet from the original render. That render is a soft dithered AI image at ~8x final size, so every piece is box-downsampled to the native cell size (averaging colour weighted by opacity, so the black background is not dragged into the outline) and median-cut to flat colours. Bodies and eyes get **separate palettes** (`--body-colors` / `--eye-colors`) because the eye whites are ~3% of the art and sit close to the belly cream in RGB — pooled, they merge and the eyes turn yellow. Rerunning overwrites hand edits; `--refresh` instead keeps the edited cells and only redraws the reference matrix. See "Editing the adult Totoro" below. |
+| `generate_totoro_adult_sheet.py` | `assets/totoro_adult_worksheet.png` → `src/sprite_totoro_adult.h` | The converter to rerun after every hand edit. Reads the worksheet's fixed grid, upscales by `--scale`, and encodes. The reference shows a **single eye** on the side-facing poses, so the sheet carries both the pair and a single-eye cut of each expression and `EyeBase[]` says which to hang. Bodies are centred on their own cell rather than on the eye, which keeps the sheet ~30% narrower but means mirroring moves the socket — hence a per-pose `EyeOffsetX[]`, which the scene mirrors as `cellW - eyeW - offsetX`. |
 | `generate_soot_sheet.py` | `assets/soot_source.png` → `src/sprite_soot.h` | Finds sprite blobs and packs them into uniform 16px cells. |
 | `generate_soot_mole_sheet.py` | `assets/soot_mole_source.png` → `src/sprite_soot_mole.h` | Like `generate_soot_sheet.py` but the source has no real alpha and its blobs touch/overlap, so it labels connected regions, filters for plausible single-creature bbox size/aspect, and isolates each blob's own pixels (keeping enclosed eye-whites) before packing into 44px cells. Used for the Whack-a-Mole "mole". |
 | `generate_grass_tile.py` | `assets/tictactoe_bg_elements_source.png` → `src/image_grass_tile.h` | Crops a clean 50x50 grass patch and makes it seamless (offset+feather) for use as a *repeating* background tile - far smaller than a full-screen image. See "tiled backgrounds" below. |
 | `generate_ttt_grid.py` | `assets/tictactoe_bg_elements_source.png` → `src/sprite_ttt_grid.h` | Crops the wooden "#" grid and keys out its black background so it overlays as a transparent 210x210 Avatar over the tiled grass. |
+| `generate_catbus_bg.py` | `assets/catbus_cross_concept.png` → `src/image_catbus_cross_bg.h` + `src/sprite_catbus_soot.h` | The source is a two-panel concept sheet whose right panel is the real art, with the soot, Mei, direction arrows and a caption already drawn in. Lifts one soot out as its own sprite (largest non-dirt blob in a lane, which keeps the enclosed white eyes and rejects pebbles), then paints all of them back out of the board. Inpainting copies pixels from the same rows a fixed distance sideways - the board is horizontally stratified, so a shift always lands on matching material - with alpha-feathered edges. The score plate is a flat gradient (one clean column stretched across) and the caption sits on unstratified foliage (mirror-tiled). Pre-quantizes with median cut before encoding: `encode_sheet`'s own reduction is an O(n²) pairwise merge that never finishes on photographic art. |
 | `generate_ttt_tokens.py` | `assets/ttt_mei_source.png` + `assets/ttt_catbus_source.png` → `src/sprite_ttt_tokens.h` | Crops a square around each character's face and applies a circular alpha mask + coloured ring, giving clean round game tokens (Mei = O, Cat Bus = X) that read over the grass board. Edit the per-token crop boxes/ring colours in `TOKENS`. |
 | `generate_digit_sheet.py` / `generate_letter_sheet.py` / `pack_digit_sheet.py` | procedural / source PNG → glyph headers | Lays out digit/letter glyphs into a sheet. |
 
@@ -186,14 +189,61 @@ The home pet (`Scene_PetTotoro`) draws two avatars: the body, and an
 | `sit` | pose 4, head-on | idle; also while eating and while sick |
 | `walk_a` / `walk_b` | poses 5-6, **facing left** | wandering; mirrored to walk right |
 | `sit_side` | pose 7, facing left | idle, as a variant of `sit` |
-| `sleep` / `blink` | aliases of `sit` / `stand` | nothing — legacy slots that keep region indices 0-5 interchangeable with the junior/adult sheets |
+| `sleep` / `blink` | aliases of `sit` / `stand` | nothing — legacy slots that keep region indices 0-5 the same on both sheets |
 
 The face is chosen by happiness alone (`eyeVariantForHappiness`), in
-lower-inclusive bands: `<20` eye 4 (unhappy), `20-39` eye 1 (content),
-`40-59` eye 3 (neutral), `60-79` eye 5 (smiling), `>=80` eye 2 (laughing).
+lower-inclusive bands: `<20` eye 4 (sad), `20-39` eye 1 (normal),
+`40-59` eye 3 (content), `60-79` eye 5 (excited), `>=80` eye 2 (happiest).
 
 To add an expression, add a box to `EYE_BOXES` in the generator and rerun it;
 the region and offset tables regenerate themselves.
+
+Both the baby (`sprite_totoro_pet.h`) and adult (`sprite_totoro_adult.h`)
+sheets follow this layout and expose the same three PROGMEM tables —
+`EyeBase[]`, `EyeOffsetX[]`, `EyeOffsetY[]`, one entry per body region — so
+`setupFace()` drives either of them unchanged.
+
+### Growth stages
+
+There are exactly **two** stages, baby and adult, because each one costs a full
+hand-drawn sheet. `PetTotoroState::stage()` derives the stage from `careXP`
+alone — at or above `PET_STAGE_ADULT_XP` (150) the pet is an adult — and
+`setupStagePet()` picks the matching sheet. Only `careXP` is persisted, so the
+threshold can be retuned without invalidating saves.
+
+Care XP is never shown to the player; the Status screen deliberately omits both
+it and the stage name. `src/sprite_totoro_baby.h` and
+`src/sprite_totoro_junior.h` are retired art kept on disk but not included by
+any scene.
+
+### Editing the adult Totoro
+
+The adult art is the one asset with a hand-editable intermediate.
+`assets/totoro_adult_worksheet.png` is clean pixel art at **native** resolution
+(the firmware doubles it), on a fixed grid with a 1px gutter between cells:
+
+| Band | Contents | Cell |
+|------|----------|------|
+| 0 | 7 pose cells, in pose order 1-7 | 46x56 |
+| 1 | 10 eye cells: variants 1-5 as **pairs**, then 1-5 as **single** eyes | 26x12 |
+| 2 | 7x5 pose+eye reference, regenerated — do not edit | 46x56 |
+
+Workflow:
+
+1. Edit bands 0 and 1 in any pixel editor. Keep the background transparent (the
+   converter keys on alpha) and bodies sitting on the cell floor.
+2. `python3 tools/generate_totoro_adult_sheet.py` → rewrites
+   `src/sprite_totoro_adult.h` and `assets/sprite_totoro_adult_preview.png`.
+3. Optionally `python3 tools/generate_totoro_adult_worksheet.py --refresh` to
+   redraw band 2 so the worksheet shows your own composite.
+
+Gutters and the captions in the right margin sit outside every cell, so the
+converter never reads them. To move a face, edit `EYE_OFFSETS` in
+`generate_totoro_adult_sheet.py` (native px, top-left of the eye cell within
+the pose cell); for sub-cell nudges just move the eyes inside their own cell.
+Changing the cell geometry means changing the constants in that same file and
+reseeding the worksheet — the seeding script prints any `EYE_OFFSETS` drift it
+detects.
 
 ### Tiled (repeating) backgrounds — save flash
 

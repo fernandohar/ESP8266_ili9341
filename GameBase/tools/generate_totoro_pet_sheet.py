@@ -80,7 +80,7 @@ EYE_ANCHORS = {
 POSE_CELLS = [1, 2, 3, 4, 5, 6, 7]
 
 # The region table the scene indexes into. Entries 0..5 keep the ordering the
-# junior/adult sheets already use (TOTORO_RGN_* in Scene_PetTotoro) so sheets
+# adult sheet already uses (TOTORO_RGN_* in Scene_PetTotoro) so the two sheets
 # stay interchangeable; the rest are specific to this art. Several regions
 # deliberately alias the same cell.
 BODY_REGIONS = [
@@ -169,19 +169,33 @@ def build_sheet(source, scale):
 def append_metadata(path, name, meta, body_count, eye_count):
     """Bolt the attach-offset tables onto the shared asset header."""
     upper = name.upper()
-    offsets = ", ".join(str(v) for v in meta["eye_offset_y"])
+
+    def table(values):
+        return ", ".join(str(v) for v in values)
+
     extra = f"""
 // --- Runtime face compositing -------------------------------------------
 // The first {body_count} regions are bodies; the rest are eye/mouth strips.
-// Hang region ({upper}_EYE_REGION + variant) on the body at this offset.
+// Hang region ({name}EyeBase[body] + variant) on the body at
+// ({name}EyeOffsetX[body], {name}EyeOffsetY[body]).
 #define {upper}_BODY_REGION_COUNT {body_count}
 #define {upper}_EYE_REGION {body_count}
 #define {upper}_EYE_VARIANTS {eye_count}
 // Cells are mirror-symmetric about the eye centre, so this holds when flipped.
 #define {upper}_EYE_OFFSET_X {meta['eye_offset_x']}
 
+// Every pose wears the same strip; the tables exist so the scene can drive
+// this sheet and the adult one (which does vary per pose) the same way.
+static const uint8_t {name}EyeBase[{body_count}] PROGMEM = {{
+  {table([body_count] * body_count)}
+}};
+
+static const uint8_t {name}EyeOffsetX[{body_count}] PROGMEM = {{
+  {table([meta['eye_offset_x']] * body_count)}
+}};
+
 static const uint8_t {name}EyeOffsetY[{body_count}] PROGMEM = {{
-  {offsets}
+  {table(meta['eye_offset_y'])}
 }};
 """
     with open(path, encoding="utf-8") as handle:

@@ -99,13 +99,7 @@ void PetTotoroState::addCareXP(uint32_t amount) {
 }
 
 int PetTotoroState::stage() {
-  if (careXpValue >= PET_STAGE_ADULT_XP) {
-    return PET_STAGE_ADULT;
-  }
-  if (careXpValue >= PET_STAGE_JUNIOR_XP) {
-    return PET_STAGE_JUNIOR;
-  }
-  return PET_STAGE_BABY;
+  return (careXpValue >= PET_STAGE_ADULT_XP) ? PET_STAGE_ADULT : PET_STAGE_BABY;
 }
 
 void PetTotoroState::reviveIfNeeded() {

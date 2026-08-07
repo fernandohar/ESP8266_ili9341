@@ -10,10 +10,11 @@
 #include "GameProgress.h"
 
 // Read-only status screen reached from the pet's radial menu ("Info"). Shows the
-// four care stats, the current growth stage + care-XP progress, and coins. It is
-// a static screen: everything is drawn once in initScene() and render() is a
-// no-op (per the project's static-screen guidance). Home or the Back button
-// returns to the pet's home.
+// four care stats and coins. Growth stage and care-XP are deliberately not shown
+// - the pet grows from baby to adult on its own and the numbers behind that are
+// not something the player acts on. It is a static screen: everything is drawn
+// once in initScene() and render() is a no-op (per the project's static-screen
+// guidance). Home or the Back button returns to the pet's home.
 class Scene_Status : public GameScene {
   public:
     Scene_Status(TFT_eSPI *tft) {
@@ -65,6 +66,14 @@ class Scene_Status : public GameScene {
     static const int16_t BACK_W = 120;
     static const int16_t BACK_H = 36;
 
+    // Vertical layout. With the stage/XP block gone the four stat rows move up
+    // and everything below gets room: coins are font 4 (26px tall) and the sick
+    // line only appears sometimes, but both now clear the Back button.
+    static const int16_t STATS_Y = 70;
+    static const int16_t STATS_ROW_H = 30;
+    static const int16_t COINS_Y = 196;
+    static const int16_t SICK_Y = 240;
+
     boolean wasTouching = false;
     unsigned long suppressTouchUntilMs = 0;
 
@@ -76,14 +85,6 @@ class Scene_Status : public GameScene {
       return (tx >= x && tx < x + w && ty >= y && ty < y + h);
     }
 
-    const char *stageName() {
-      switch (PetTotoroState::stage()) {
-        case PET_STAGE_ADULT: return "Adult";
-        case PET_STAGE_JUNIOR: return "Junior";
-        default: return "Baby";
-      }
-    }
-
     void draw() {
       uint16_t back = bg();
       _tft->fillScreen(back);
@@ -92,72 +93,23 @@ class Scene_Status : public GameScene {
       _tft->setTextColor(rgb565(232, 232, 210), back);
       _tft->drawString("Status", SCREENWIDTH / 2, 22, 4);
 
-      drawStageBlock(52);
-
-      int16_t y = 128;
+      int16_t y = STATS_Y;
       const PetTotoroStats &s = PetTotoroState::stats();
       meterRow(y, "Health", s.health);
-      meterRow(y + 30, "Hunger", s.hunger);
-      meterRow(y + 60, "Happy", s.happiness);
-      meterRow(y + 90, "Clean", s.cleanness);
+      meterRow(y + STATS_ROW_H, "Hunger", s.hunger);
+      meterRow(y + STATS_ROW_H * 2, "Happy", s.happiness);
+      meterRow(y + STATS_ROW_H * 3, "Clean", s.cleanness);
 
-      drawCoins(y + 126);
+      drawCoins(COINS_Y);
 
       if (PetTotoroState::isSick()) {
         _tft->setTextDatum(MC_DATUM);
         _tft->setTextColor(rgb565(240, 120, 120), back);
-        _tft->drawString("Feeling sick - care for it!", SCREENWIDTH / 2, y + 152, 2);
+        _tft->drawString("Feeling sick - care for it!", SCREENWIDTH / 2, SICK_Y, 2);
       }
 
       drawBackButton();
       _tft->setTextDatum(TL_DATUM);
-    }
-
-    void drawStageBlock(int16_t y) {
-      uint16_t back = bg();
-      _tft->setTextDatum(MC_DATUM);
-      _tft->setTextColor(rgb565(180, 220, 180), back);
-      char line[24];
-      snprintf(line, sizeof(line), "Stage: %s", stageName());
-      _tft->drawString(line, SCREENWIDTH / 2, y, 2);
-
-      // Care-XP progress toward the next stage.
-      uint32_t xp = PetTotoroState::careXP();
-      uint32_t base = 0;
-      uint32_t next = PET_STAGE_JUNIOR_XP;
-      int stage = PetTotoroState::stage();
-      if (stage == PET_STAGE_JUNIOR) {
-        base = PET_STAGE_JUNIOR_XP;
-        next = PET_STAGE_ADULT_XP;
-      } else if (stage == PET_STAGE_ADULT) {
-        base = PET_STAGE_ADULT_XP;
-        next = PET_STAGE_ADULT_XP;
-      }
-
-      int16_t barX = 30;
-      int16_t barY = y + 18;
-      int16_t barW = SCREENWIDTH - 60;
-      int16_t barH = 10;
-      _tft->drawRect(barX, barY, barW, barH, rgb565(90, 110, 90));
-
-      if (stage == PET_STAGE_ADULT) {
-        _tft->fillRect(barX + 1, barY + 1, barW - 2, barH - 2, rgb565(120, 190, 120));
-        _tft->setTextColor(rgb565(150, 190, 150), back);
-        _tft->drawString("Fully grown", SCREENWIDTH / 2, barY + barH + 12, 2);
-      } else {
-        uint32_t span = next - base;
-        uint32_t done = (xp > base) ? (xp - base) : 0;
-        if (done > span) done = span;
-        int16_t fillW = (span == 0) ? 0 : (int16_t)((uint32_t)(barW - 2) * done / span);
-        if (fillW > 0) {
-          _tft->fillRect(barX + 1, barY + 1, fillW, barH - 2, rgb565(120, 190, 120));
-        }
-        char xpline[28];
-        snprintf(xpline, sizeof(xpline), "XP %lu / %lu",
-                 (unsigned long)xp, (unsigned long)next);
-        _tft->setTextColor(rgb565(150, 160, 150), back);
-        _tft->drawString(xpline, SCREENWIDTH / 2, barY + barH + 12, 2);
-      }
     }
 
     void meterRow(int16_t y, const char *label, int value) {

@@ -14,10 +14,10 @@
 #include "Attachment.h"
 #include "TouchInput.h"
 #include "image_acorn_catch_bg.h"
+// Baby and adult are the only stages; a third would cost another full sheet to
+// draw. The retired sprite_totoro_baby.h and sprite_totoro_junior.h are still in
+// src/ - re-adding an include is all it takes to bring either back.
 #include "sprite_totoro_pet.h"
-// Retired baby art, kept so the swap below is a one-line revert.
-#include "sprite_totoro_baby.h"
-#include "sprite_totoro_junior.h"
 #include "sprite_totoro_adult.h"
 #include "sprite_soot.h"
 #include "sprite_grocery_food.h"
@@ -46,16 +46,16 @@
 // Care XP awarded per soot cleaned (feeding/petting/game wins add more later).
 #define PET_CARE_XP_CLEAN 10
 
-// Totoro sprite-sheet region order (shared by baby/junior/adult sheets).
+// Totoro sprite-sheet region order (shared by the baby and adult sheets).
 #define TOTORO_RGN_WALK_A 0
 #define TOTORO_RGN_WALK_B 1
 #define TOTORO_RGN_SIT 2
 #define TOTORO_RGN_STAND 3
 #define TOTORO_RGN_SLEEP 4
-// Legacy eyes-closed frame. sprite_totoro_pet aliases it to the standing body
-// because its eyes are a separate strip, so nothing draws it any more.
+// Legacy eyes-closed frame. The baby/adult sheets alias it to the standing
+// body because their eyes are a separate strip, so nothing draws it any more.
 #define TOTORO_RGN_BLINK 5
-// Only sprite_totoro_pet provides these (see hasEyes).
+// Only the baby and adult sheets provide these (see hasEyes).
 #define TOTORO_RGN_HUNGRY 6
 #define TOTORO_RGN_DANCE 7
 #define TOTORO_RGN_SIT_SIDE 8
@@ -98,12 +98,12 @@
 #define PET_CARE_XP_BATHE 5
 
 // --- Mini-game reward hand-off (applied on return to the home) ---
+// The coin half of the payout lives in GameResult.h, since the coin reward
+// screen banks it before the player ever gets back here.
 #define GAME_WIN_HAPPINESS 12
 #define GAME_LOSS_HAPPINESS 4
 #define GAME_WIN_CARE_XP 15
 #define GAME_LOSS_CARE_XP 5
-#define GAME_WIN_DEFAULT_COINS 5
-#define GAME_LOSS_CONSOLATION_COINS 2
 #define PET_REWARD_TOAST_MS 2200
 
 enum PetMenuItem {
@@ -371,8 +371,13 @@ class Scene_PetTotoro : public GameScene {
       // The face is a separate sheet cell hung on the body, so a mood change
       // costs one small region swap instead of a second copy of every pose.
       bool hasEyes;
-      uint8_t eyeVariant;
-      uint8_t eyeOffsetY;
+      const uint8_t *eyeBaseTable;     // per body region: sheet region of variant 0
+      const uint8_t *eyeOffsetXTable;  // per body region, mirrored when flipped
+      const uint8_t *eyeOffsetYTable;
+      uint8_t bodyRegionCount;
+      uint8_t eyeRegion;   // strip currently applied
+      uint8_t eyeAppliedX;
+      uint8_t eyeAppliedY;
     };
 
     Pet pets[1];
@@ -421,25 +426,20 @@ class Scene_PetTotoro : public GameScene {
     }
 
     // Build the single Totoro from the sprite sheet that matches its stage.
+    // Both sheets carry their eyes as separate cells and expose the same three
+    // offset tables, so setupFace() drives either one unchanged.
     void setupStagePet() {
-      switch (PetTotoroState::stage()) {
-        case PET_STAGE_ADULT:
-          setupPet(pets[0], sprite_totoro_adult, sprite_totoro_adultMask,
-                   SPRITE_TOTORO_ADULT_WIDTH, SPRITE_TOTORO_ADULT_HEIGHT,
-                   sprite_totoro_adultRegions);
-          break;
-        case PET_STAGE_JUNIOR:
-          setupPet(pets[0], sprite_totoro_junior, sprite_totoro_juniorMask,
-                   SPRITE_TOTORO_JUNIOR_WIDTH, SPRITE_TOTORO_JUNIOR_HEIGHT,
-                   sprite_totoro_juniorRegions);
-          break;
-        case PET_STAGE_BABY:
-        default:
-          setupPet(pets[0], &sprite_totoro_pet, SPRITE_TOTORO_PET_SHEET_WIDTH,
-                   SPRITE_TOTORO_PET_SHEET_HEIGHT, sprite_totoro_petRegions);
-          setupFace(pets[0]);
-          break;
+      if (PetTotoroState::stage() == PET_STAGE_ADULT) {
+        setupPet(pets[0], &sprite_totoro_adult, SPRITE_TOTORO_ADULT_SHEET_WIDTH,
+                 SPRITE_TOTORO_ADULT_SHEET_HEIGHT, sprite_totoro_adultRegions);
+        setupFace(pets[0], sprite_totoro_adultEyeBase, sprite_totoro_adultEyeOffsetX,
+                  sprite_totoro_adultEyeOffsetY, SPRITE_TOTORO_ADULT_BODY_REGION_COUNT);
+        return;
       }
+      setupPet(pets[0], &sprite_totoro_pet, SPRITE_TOTORO_PET_SHEET_WIDTH,
+               SPRITE_TOTORO_PET_SHEET_HEIGHT, sprite_totoro_petRegions);
+      setupFace(pets[0], sprite_totoro_petEyeBase, sprite_totoro_petEyeOffsetX,
+                sprite_totoro_petEyeOffsetY, SPRITE_TOTORO_PET_BODY_REGION_COUNT);
     }
 
     // Fields every stage shares; the caller still has to attach the avatar.
@@ -453,8 +453,13 @@ class Scene_PetTotoro : public GameScene {
       p.poseFrameMs = millis();
       p.nextPoseMs = millis() + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
       p.hasEyes = false;
-      p.eyeVariant = 0xFF;  // no strip applied yet
-      p.eyeOffsetY = 0;
+      p.eyeBaseTable = NULL;
+      p.eyeOffsetXTable = NULL;
+      p.eyeOffsetYTable = NULL;
+      p.bodyRegionCount = 0;
+      p.eyeRegion = 0xFF;  // no strip applied yet
+      p.eyeAppliedX = 0;
+      p.eyeAppliedY = 0;
     }
 
     void setupPet(Pet &p, const SpriteAsset *asset, uint16_t sheetW, uint16_t sheetH,
@@ -489,28 +494,32 @@ class Scene_PetTotoro : public GameScene {
       appendAvatar(p.avatar);
     }
 
-    // Hang the eye/mouth strip on the body. Only sprite_totoro_pet ships the
-    // separate face cells; the older sheets have their eyes painted on.
-    void setupFace(Pet &p) {
+    // Hang the eye strip on the body. Both stage sheets ship their eyes as
+    // separate cells, indexed through the caller's per-pose tables.
+    void setupFace(Pet &p, const uint8_t *base, const uint8_t *offsetX,
+                   const uint8_t *offsetY, uint8_t bodyRegions) {
       if (p.avatar == NULL) {
         return;
       }
       p.hasEyes = true;
-      SpriteSheetRegion eye = SpriteSheet::readRegion(p.regions, SPRITE_TOTORO_PET_EYE_REGION);
-      eyeAttach = new Attachment(SPRITE_TOTORO_PET_EYE_OFFSET_X, 0, p.avatar,
-                                 eye.width, eye.height, NULL, NULL);
+      p.eyeBaseTable = base;
+      p.eyeOffsetXTable = offsetX;
+      p.eyeOffsetYTable = offsetY;
+      p.bodyRegionCount = bodyRegions;
+      SpriteSheetRegion eye = SpriteSheet::readRegion(p.regions, pgm_read_byte(&base[0]));
+      eyeAttach = new Attachment(0, 0, p.avatar, eye.width, eye.height, NULL, NULL);
       appendAvatar(eyeAttach);  // appended after the body -> drawn on top of it
       updateFace(p);
     }
 
-    // Happiness picks the expression. Bands are lower-inclusive, matching the
-    // strips left to right in assets/totoro_parts_source.png.
+    // Happiness picks the expression. Bands are lower-inclusive, and the
+    // returned index counts the strips left to right in the pose worksheets.
     static uint8_t eyeVariantForHappiness(int happiness) {
-      if (happiness >= 80) return 1;  // eye 2: shut, laughing
-      if (happiness >= 60) return 4;  // eye 5: open, smiling
-      if (happiness >= 40) return 2;  // eye 3: open, neutral
-      if (happiness >= 20) return 0;  // eye 1: shut, content
-      return 3;                       // eye 4: shut, unhappy
+      if (happiness >= 80) return 1;  // eye 2: happiest
+      if (happiness >= 60) return 4;  // eye 5: excited
+      if (happiness >= 40) return 2;  // eye 3: content
+      if (happiness >= 20) return 0;  // eye 1: normal
+      return 3;                       // eye 4: sad
     }
 
     // Re-point the face at the mood's strip and at the current pose's eye
@@ -519,25 +528,32 @@ class Scene_PetTotoro : public GameScene {
       if (!p.hasEyes || eyeAttach == NULL || p.avatar == NULL) {
         return;
       }
-      if (p.faceRegion >= SPRITE_TOTORO_PET_BODY_REGION_COUNT) {
+      if (p.faceRegion >= p.bodyRegionCount) {
         return;
       }
       uint8_t variant = eyeVariantForHappiness(PetTotoroState::stats().happiness);
-      uint8_t offsetY = pgm_read_byte(&sprite_totoro_petEyeOffsetY[p.faceRegion]);
+      // Side-on poses show a single eye, so the strip to use is per pose too.
+      uint8_t region = pgm_read_byte(&p.eyeBaseTable[p.faceRegion]) + variant;
+      uint8_t offsetX = pgm_read_byte(&p.eyeOffsetXTable[p.faceRegion]);
+      uint8_t offsetY = pgm_read_byte(&p.eyeOffsetYTable[p.faceRegion]);
       bool flip = p.avatar->flipX;
-      if (variant == p.eyeVariant && offsetY == p.eyeOffsetY && flip == eyeAttach->flipX) {
+      if (region == p.eyeRegion && offsetX == p.eyeAppliedX && offsetY == p.eyeAppliedY &&
+          flip == eyeAttach->flipX) {
         return;
       }
 
-      if (variant != p.eyeVariant) {
-        p.eyeVariant = variant;
+      if (region != p.eyeRegion) {
+        p.eyeRegion = region;
         SpriteSheet sheet(p.asset);
-        sheet.applyRegion(eyeAttach, SpriteSheet::readRegion(
-                                         p.regions, SPRITE_TOTORO_PET_EYE_REGION + variant));
+        sheet.applyRegion(eyeAttach, SpriteSheet::readRegion(p.regions, region));
       }
-      p.eyeOffsetY = offsetY;
-      // Cells are mirror-symmetric about the eye centre, so only Y moves.
-      eyeAttach->setAttachOffset(SPRITE_TOTORO_PET_EYE_OFFSET_X, offsetY);
+      p.eyeAppliedX = offsetX;
+      p.eyeAppliedY = offsetY;
+      // The body is centred on its own outline, so mirroring the cell moves the
+      // eye socket to the far side.
+      int16_t attachX = flip ? (int16_t)p.frameW - (int16_t)eyeAttach->width - (int16_t)offsetX
+                             : (int16_t)offsetX;
+      eyeAttach->setAttachOffset(attachX, offsetY);
       eyeAttach->setFlipX(flip);
       eyeAttach->updatePos(millis());
       eyeAttach->requestRedraw();
@@ -1111,13 +1127,14 @@ class Scene_PetTotoro : public GameScene {
 
     // ---- Play sub-menu (game picker) ---------------------------------------
 
-    static const int PET_PLAY_GAME_COUNT = 3;
+    static const int PET_PLAY_GAME_COUNT = 4;
 
     const char *playGameLabel(int i) {
       switch (i) {
         case 0: return "Acorn Catch";
         case 1: return "Tic-Tac-Toe";
         case 2: return "Whack-a-Mole";
+        case 3: return "Cat Bus Cross";
       }
       return "";
     }
@@ -1127,6 +1144,7 @@ class Scene_PetTotoro : public GameScene {
         case 0: return SCENE_ACORN_CATCH;
         case 1: return SCENE_TIC_TAC_TOE;
         case 2: return SCENE_WHACK_A_MOLE;
+        case 3: return SCENE_CAT_BUS_CROSS;
       }
       return SCENE_PET_TOTORO;
     }
@@ -1136,6 +1154,7 @@ class Scene_PetTotoro : public GameScene {
         case 0: return rgb565(200, 150, 70);
         case 1: return rgb565(90, 160, 200);
         case 2: return rgb565(150, 120, 200);
+        case 3: return rgb565(220, 120, 80);
       }
       return rgb565(120, 120, 120);
     }
@@ -1143,15 +1162,15 @@ class Scene_PetTotoro : public GameScene {
     void playButtonRect(int i, int16_t *x, int16_t *y, int16_t *w, int16_t *h) {
       *x = 40;
       *w = SCREENWIDTH - 80;
-      *h = 40;
-      *y = 116 + i * (*h + 12);
+      *h = 34;
+      *y = 98 + i * (*h + 8);
     }
 
     void backButtonRect(int16_t *x, int16_t *y, int16_t *w, int16_t *h) {
       *w = 120;
       *h = 34;
       *x = (SCREENWIDTH - *w) / 2;
-      *y = 262;
+      *y = 278;
     }
 
     void drawPlayMenu() {
@@ -1303,21 +1322,23 @@ class Scene_PetTotoro : public GameScene {
       addSound(NOTE_G5, noteDurationMs(16, 900));
     }
 
-    // Consume a pending mini-game result: grant coins, happiness and care-XP
-    // (a win pays more; a loss still gives a small consolation) and queue a
-    // brief toast. Safe to call every entry; it no-ops without a pending result.
+    // Consume a pending mini-game result: grant happiness and care-XP (a win
+    // pays more; a loss still gives a small consolation) and queue a brief
+    // toast. Safe to call every entry; it no-ops without a pending result.
+    //
+    // Coins are normally already banked and announced by the coin reward screen,
+    // so takeCoins() usually returns 0 here and the toast is just the verdict.
+    // It still pays out if a game ever hands back without that screen.
     void applyGameReward() {
       if (!GameResult::pending()) {
         return;
       }
       GameOutcome outcome = GameResult::outcome();
-      int reportedCoins = GameResult::coins();
       int reportedHappiness = GameResult::happiness();
-      int coins;
+      int coins = GameResult::takeCoins();
       int happiness;
       const char *label;
       if (outcome == GAME_RESULT_WIN) {
-        coins = (reportedCoins >= 0) ? reportedCoins : GAME_WIN_DEFAULT_COINS;
         happiness = (reportedHappiness >= 0) ? reportedHappiness : GAME_WIN_HAPPINESS;
         PetTotoroState::addCareXP(GAME_WIN_CARE_XP);
         label = "Win!";
@@ -1325,9 +1346,6 @@ class Scene_PetTotoro : public GameScene {
         addSound(NOTE_G5, noteDurationMs(10, 900));
         addSound(NOTE_C6, noteDurationMs(10, 900));
       } else {
-        // A loss always pays the fixed consolation (games report 0 coins on a
-        // loss); only happiness can be overridden per game.
-        coins = GAME_LOSS_CONSOLATION_COINS;
         happiness = (reportedHappiness >= 0) ? reportedHappiness : GAME_LOSS_HAPPINESS;
         PetTotoroState::addCareXP(GAME_LOSS_CARE_XP);
         label = "Nice try!";
@@ -1337,8 +1355,10 @@ class Scene_PetTotoro : public GameScene {
       PetTotoroState::adjustHappiness(happiness);
       if (coins > 0) {
         GameProgress::addCoins(coins);
+        snprintf(rewardToast, sizeof(rewardToast), "%s +%d coins", label, coins);
+      } else {
+        snprintf(rewardToast, sizeof(rewardToast), "%s", label);
       }
-      snprintf(rewardToast, sizeof(rewardToast), "%s +%d coins", label, coins);
       rewardToastUntilMs = millis() + PET_REWARD_TOAST_MS;
       GameResult::clear();
     }

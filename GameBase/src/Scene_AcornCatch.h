@@ -46,6 +46,9 @@
 #define MEI_RUN_FRAMES 6
 #define MEI_RUN_FRAME_MS 90
 #define PLAYER_GROUND_Y (GROUND_Y - 8)
+// Where Mei and Chu stand at the top of every round.
+#define PLAYER_START_X 109
+#define ENEMY_START_X 170
 #define ACORN_FALL_SPEED 5.0f
 // Each falling acorn gets a random constant speed in this range (px per 50ms).
 #define ACORN_MIN_FALL_SPEED 3.0f
@@ -116,6 +119,10 @@
 #define WIN_COINS_NUM_Y 150
 #define WIN_COINS_LABEL_Y 196
 #define WIN_COINS_DIGIT_GAP 2
+// "Tap to replay" pill, on the ground strip below where Mei and Chu stand
+// (their feet are at CHU_FEET_Y) so it covers neither them nor the label above.
+#define ACORN_HINT_Y 262
+#define ACORN_HINT_H 22
 
 #define HUD_WATCH_X 2
 #define HUD_WATCH_Y 2
@@ -160,6 +167,9 @@ enum AcornCatchState {
 // doesn't immediately act on the mode-select screen.
 #define INTRO_INPUT_GRACE_MS 300
 
+// Let the result sink in before a press or tap can leave for the coin screen.
+#define ACORN_END_INPUT_GRACE_MS 600
+
 class Scene_AcornCatch : public GameScene {
   public:
     Scene_AcornCatch(TFT_eSPI *tft) {
@@ -171,11 +181,17 @@ class Scene_AcornCatch : public GameScene {
       unsigned long now = millis();
 
       if (state == ACORN_STATE_WON || state == ACORN_STATE_LOST) {
-        // Only after the round has ended does Home return to the pet home.
-        if (input.homePressed) {
-          *needChangeScene = true;
-          *nextSceneIndex = SCENE_PET_TOTORO;
+        // Home ends the visit and collects the payout for every round played; a
+        // tap goes back to the picker to choose another mode.
+        if (now > endInputAfterMs) {
+          if (input.homePressed) {
+            *needChangeScene = true;
+            *nextSceneIndex = gameExitSceneIndex();
+          } else if (isTouching && !wasTouching) {
+            returnToModeSelect(now);
+          }
         }
+        wasTouching = isTouching;
         return;
       }
 
@@ -273,7 +289,7 @@ class Scene_AcornCatch : public GameScene {
 
       initHudAvatars();
 
-      player = meiSheet().createAvatar(109, PLAYER_GROUND_Y,
+      player = meiSheet().createAvatar(PLAYER_START_X, PLAYER_GROUND_Y,
                                        SpriteSheet::readRegion(sprite_meiRegions, 0));
       player->updateInterval = 50;
       appendAvatar(player);
@@ -281,7 +297,7 @@ class Scene_AcornCatch : public GameScene {
       meiFacingRight = true;
       meiFrameMs = millis();
 
-      enemy = new Avatar(170, chuGroundY, SPRITE_CHU_TOTORO_WIDTH, SPRITE_CHU_TOTORO_HEIGHT, sprite_chu_totoro, sprite_chu_totoroMask);
+      enemy = new Avatar(ENEMY_START_X, chuGroundY, SPRITE_CHU_TOTORO_WIDTH, SPRITE_CHU_TOTORO_HEIGHT, sprite_chu_totoro, sprite_chu_totoroMask);
       enemy->setVelocity(0, 0);
       enemy->updateInterval = 50;
       appendAvatar(enemy);
@@ -315,6 +331,15 @@ class Scene_AcornCatch : public GameScene {
         appendAvatar(scatterAcorns[i]);
       }
 
+      // One pool of glyphs, reused by every end message this visit. They start
+      // on the letter sheet but are re-pointed at the digit sheet as needed.
+      SpriteSheet letters = SpriteText::letterSheet();
+      SpriteSheetRegion placeholder = SpriteSheet::readRegion(sprite_lettersRegions, 0);
+      for (int i = 0; i < MAX_END_MESSAGE_GLYPHS; i++) {
+        endMessageAvatars[i] = letters.createAvatar(-100, -100, placeholder);
+        appendAvatar(endMessageAvatars[i]);
+      }
+
       chuJumping = false;
       chuVy = 0;
       chuJumpVx = 0;
@@ -339,7 +364,8 @@ class Scene_AcornCatch : public GameScene {
       // Ignore a still-held tap carried over from the radial menu until released.
       wasTouching = true;
       nextSpawnMs = 0;
-      clearEndMessageAvatars();
+      endMessageAvatarCount = 0;
+      endMessageBuilt = false;
       resetHudCache();
       drawModeSelect();
     }
@@ -366,7 +392,11 @@ class Scene_AcornCatch : public GameScene {
         scatterAcorns[i] = NULL;
         scatterActive[i] = false;
       }
-      clearEndMessageAvatars();
+      for (int i = 0; i < MAX_END_MESSAGE_GLYPHS; i++) {
+        endMessageAvatars[i] = NULL;
+      }
+      endMessageAvatarCount = 0;
+      endMessageBuilt = false;
       GameScene::destroyScene();
     }
 
@@ -434,6 +464,7 @@ class Scene_AcornCatch : public GameScene {
     Avatar *endMessageAvatars[MAX_END_MESSAGE_GLYPHS];
     int endMessageAvatarCount = 0;
     bool endMessageBuilt = false;
+    unsigned long endInputAfterMs = 0;
 
     void resetHudCache() {
       lastHudTimeLeft = -1;
@@ -627,6 +658,18 @@ class Scene_AcornCatch : public GameScene {
       _tft->setTextDatum(TL_DATUM);
     }
 
+    // Back to the picker for another go. beginPlay() does the round reset, so
+    // all that is needed here is to clear the results and repaint; drawModeSelect
+    // fills the whole screen, which covers the glyphs that were just parked.
+    void returnToModeSelect(unsigned long now) {
+      hideEndMessage();
+      state = ACORN_STATE_MODE_SELECT;
+      stateStartMs = now;
+      wasTouching = true;
+      addSound(NOTE_A4, noteDurationMs(24, 700));
+      drawModeSelect();
+    }
+
     // Leave the mode-select screen and start the actual round.
     void startGame(unsigned long now) {
       drawBackgroundAsset(&acorn_catch_bg);
@@ -639,9 +682,15 @@ class Scene_AcornCatch : public GameScene {
       }
     }
 
+    // Every round starts here, including the second and later ones now that the
+    // results screen can go back to the picker, so the whole slate is cleared.
     void beginPlay(unsigned long now) {
       state = ACORN_STATE_PLAYING;
       stateStartMs = now;
+      score = 0;
+      caughtCount = 0;
+      coinsEarned = 0;
+      resetActors();
       chuHitPending = false;
       chuStunUntilMs = 0;
       lives = SURVIVAL_LIVES;
@@ -777,7 +826,34 @@ class Scene_AcornCatch : public GameScene {
       requestRender();
     }
 
+    // Put Mei and Chu back on their marks and drop any airborne state.
+    void resetActors() {
+      player->setPos(PLAYER_START_X, PLAYER_GROUND_Y);
+      player->setVelocity(0, 0);
+      meiJumping = false;
+      meiVy = 0;
+      meiY = PLAYER_GROUND_Y;
+      lastMeiJumpMs = 0;
+      meiFrame = 0;
+      meiFacingRight = true;
+      applyMeiFrame();
+
+      enemy->setPos(ENEMY_START_X, chuGroundY);
+      enemy->setVelocity(0, 0);
+      enemy->requestRedraw();
+      chuJumping = false;
+      chuVy = 0;
+      chuJumpVx = 0;
+      chuY = chuGroundY;
+      lastChuJumpMs = 0;
+    }
+
     void freezeGameplay() {
+      // Gameplay leaves wasTouching stale, so demand a fresh press plus a short
+      // pause before the results screen will accept a dismissal.
+      wasTouching = true;
+      endInputAfterMs = millis() + ACORN_END_INPUT_GRACE_MS;
+
       player->setVelocity(0, 0);
       enemy->setVelocity(0, 0);
       for (int i = 0; i < MAX_FALLING_ACORNS; i++) {
@@ -806,9 +882,12 @@ class Scene_AcornCatch : public GameScene {
       player->y = PLAYER_GROUND_Y;
     }
 
-    void clearEndMessageAvatars() {
-      for (int i = 0; i < endMessageAvatarCount; i++) {
-        endMessageAvatars[i] = NULL;
+    // Park every glyph off-screen, ready for the next message.
+    void hideEndMessage() {
+      for (int i = 0; i < MAX_END_MESSAGE_GLYPHS; i++) {
+        if (endMessageAvatars[i] != NULL) {
+          endMessageAvatars[i]->setPos(-100, -100);
+        }
       }
       endMessageAvatarCount = 0;
       endMessageBuilt = false;
@@ -821,28 +900,22 @@ class Scene_AcornCatch : public GameScene {
       endMessageBuilt = true;
       endMessageAvatarCount = 0;
 
-      Avatar *glyphs[MAX_END_MESSAGE_GLYPHS];
       if (line1 != NULL && line1[0] != '\0') {
-        int count = SpriteText::buildCenteredLine(this, line1, END_MESSAGE_LINE1_Y, glyphs,
-                                                  MAX_END_MESSAGE_GLYPHS, END_MESSAGE_GAP);
-        for (int i = 0; i < count; i++) {
-          endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
-        }
+        endMessageAvatarCount += SpriteText::layoutCenteredLine(
+            line1, END_MESSAGE_LINE1_Y, &endMessageAvatars[endMessageAvatarCount],
+            MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount, END_MESSAGE_GAP);
       }
 
       if (line2 != NULL && line2[0] != '\0') {
-        int count = SpriteText::buildCenteredLine(this, line2, END_MESSAGE_LINE2_Y, glyphs,
-                                                  MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount, END_MESSAGE_GAP);
-        for (int i = 0; i < count; i++) {
-          endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
-        }
+        endMessageAvatarCount += SpriteText::layoutCenteredLine(
+            line2, END_MESSAGE_LINE2_Y, &endMessageAvatars[endMessageAvatarCount],
+            MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount, END_MESSAGE_GAP);
       }
 
-      renderFullScreen();
+      presentEndScreen();
     }
 
-    // Results screen: a title line, a big number, and a label under it. All
-    // glyphs are tracked so they are cleaned up with the scene.
+    // Results screen: a title line, a big number, and a label under it.
     void showResultScreen(const char *title, int number, const char *label) {
       if (endMessageBuilt) {
         return;
@@ -850,32 +923,45 @@ class Scene_AcornCatch : public GameScene {
       endMessageBuilt = true;
       endMessageAvatarCount = 0;
 
-      Avatar *glyphs[MAX_END_MESSAGE_GLYPHS];
+      endMessageAvatarCount += SpriteText::layoutCenteredLine(
+          title, WIN_TITLE_Y, &endMessageAvatars[endMessageAvatarCount],
+          MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount, END_MESSAGE_GAP);
 
-      int count = SpriteText::buildCenteredLine(this, title, WIN_TITLE_Y, glyphs,
-                                                MAX_END_MESSAGE_GLYPHS, END_MESSAGE_GAP);
-      for (int i = 0; i < count; i++) {
-        endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
-      }
+      endMessageAvatarCount += layoutCenteredNumber(
+          number, WIN_COINS_NUM_Y, &endMessageAvatars[endMessageAvatarCount],
+          MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount);
 
-      count = buildCenteredNumber(number, WIN_COINS_NUM_Y, glyphs,
-                                  MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount);
-      for (int i = 0; i < count; i++) {
-        endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
-      }
+      endMessageAvatarCount += SpriteText::layoutCenteredLine(
+          label, WIN_COINS_LABEL_Y, &endMessageAvatars[endMessageAvatarCount],
+          MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount, END_MESSAGE_GAP);
 
-      count = SpriteText::buildCenteredLine(this, label, WIN_COINS_LABEL_Y, glyphs,
-                                            MAX_END_MESSAGE_GLYPHS - endMessageAvatarCount, END_MESSAGE_GAP);
-      for (int i = 0; i < count; i++) {
-        endMessageAvatars[endMessageAvatarCount++] = glyphs[i];
-      }
-
-      renderFullScreen();
+      presentEndScreen();
     }
 
-    // Lay out `value` as centered large-digit glyphs on row `y`, using the same
-    // digit sheet as the HUD score. Returns the number of glyphs created.
-    int buildCenteredNumber(int value, int y, Avatar *out[], int maxOut) {
+    // Paint the message, then settle the renderer and add the replay hint.
+    //
+    // renderFullScreen() only saves a previous position for avatars that are on
+    // screen, so the acorns and soot that freezeGameplay() just parked are still
+    // marked dirty; one renderScene() clears those footprints. Only then is it
+    // safe to draw the hint straight to the TFT, since nothing moves afterwards.
+    void presentEndScreen() {
+      for (int i = endMessageAvatarCount; i < MAX_END_MESSAGE_GLYPHS; i++) {
+        endMessageAvatars[i]->setPos(-100, -100);
+      }
+      renderFullScreen();
+      renderScene();
+
+      uint16_t bg = rgb565(24, 44, 30);
+      _tft->fillRoundRect(30, ACORN_HINT_Y, SCREENWIDTH - 60, ACORN_HINT_H, 6, bg);
+      _tft->setTextDatum(MC_DATUM);
+      _tft->setTextColor(rgb565(230, 240, 200), bg);
+      _tft->drawString("Tap to replay", SCREENWIDTH / 2, ACORN_HINT_Y + ACORN_HINT_H / 2, 2);
+      _tft->setTextDatum(TL_DATUM);
+    }
+
+    // Lay `value` out as centered large-digit glyphs on row `y`, using the same
+    // digit sheet as the HUD score. Reuses pooled glyphs, like the letter lines.
+    int layoutCenteredNumber(int value, int y, Avatar *pool[], int poolSize) {
       char buf[8];
       snprintf(buf, sizeof(buf), "%d", value);
       int digits = (int)strlen(buf);
@@ -884,13 +970,14 @@ class Scene_AcornCatch : public GameScene {
 
       int count = 0;
       SpriteSheet sheet = digitSheet();
-      for (const char *p = buf; *p != '\0' && count < maxOut; ++p) {
+      for (const char *p = buf; *p != '\0' && count < poolSize; ++p) {
         int digit = *p - '0';
         SpriteSheetRegion region = SpriteSheet::readRegion(sprite_digitsRegions,
                                                            digit + SPRITE_DIGITS_LARGE_BASE);
-        Avatar *glyph = sheet.createAvatar((float)cursor, (float)y, region);
-        appendAvatar(glyph);
-        out[count++] = glyph;
+        sheet.applyRegion(pool[count], region);
+        pool[count]->setPos((float)cursor, (float)y);
+        pool[count]->requestRedraw();
+        count++;
         cursor += HUD_SCORE_DIGIT_W + WIN_COINS_DIGIT_GAP;
       }
       return count;

@@ -14,8 +14,15 @@
 // Care-based growth: careXP only ever grows (feeding, petting, cleaning, game
 // wins) and drives the visible stage. Decoupled from the clock so a wrong/reset
 // RTC can never rewind the pet's life.
-#define PET_STAGE_JUNIOR_XP 150
-#define PET_STAGE_ADULT_XP 500
+//
+// There are two stages, because each one costs a full sprite sheet to draw.
+// Only careXP is persisted, so this threshold can be retuned freely - a save
+// from an older build re-derives its stage from the XP it already had.
+//
+// 150 is roughly ten game wins or fifteen baths, so the pet grows up within a
+// session or two rather than making the adult art something most players never
+// see.
+#define PET_STAGE_ADULT_XP 150
 
 enum PetLifeState {
   PET_LIFE_ALIVE = 0,
@@ -25,8 +32,7 @@ enum PetLifeState {
 
 enum PetStage {
   PET_STAGE_BABY = 0,
-  PET_STAGE_JUNIOR = 1,
-  PET_STAGE_ADULT = 2
+  PET_STAGE_ADULT = 1
 };
 
 struct PetTotoroStats {

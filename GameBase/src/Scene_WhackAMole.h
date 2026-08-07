@@ -92,9 +92,11 @@ class Scene_WhackAMole : public GameScene {
       const GameInput &input = Input::current();
       unsigned long now = millis();
 
+      // Home ends the visit and collects the payout for every round played; a
+      // tap on the results screen starts another round instead.
       if (input.homePressed) {
         *needChangeScene = true;
-        *nextSceneIndex = SCENE_PET_TOTORO;
+        *nextSceneIndex = gameExitSceneIndex();
         return;
       }
 
@@ -325,7 +327,7 @@ class Scene_WhackAMole : public GameScene {
       _tft->setTextColor(colorGold(), colorWoodBg());
       snprintf(buf, sizeof(buf), "Score %d  Hits %d  Lv %d", score, hits, level);
       _tft->drawString(buf, SCREENWIDTH / 2, 204, 2);
-      _tft->drawString("Tap to play again", SCREENWIDTH / 2, 224, 2);
+      _tft->drawString("Tap to replay", SCREENWIDTH / 2, 224, 2);
       _tft->setTextDatum(TL_DATUM);
 
       addSound(NOTE_G4, noteDurationMs(8, 700));
