@@ -1,6 +1,7 @@
 #ifndef _AVATAR_H_
 #define _AVATAR_H_
 #include <Arduino.h>
+#include "SpriteAsset.h"
 struct Vec2 {
   float x;
   float y;
@@ -120,6 +121,7 @@ class Avatar {
     void setSheetSource(const uint16_t *sheetBitmap, const uint8_t *sheetMask, uint16_t sheetW,
                         uint16_t srcX, uint16_t srcY, uint16_t regionWidth, uint16_t regionHeight) {
       useSheetSource = true;
+      spriteAsset = NULL;
       this->sheetBitmap = sheetBitmap;
       this->sheetMask = sheetMask;
       this->sheetWidth = sheetW;
@@ -129,8 +131,52 @@ class Avatar {
       this->height = regionHeight;
     }
 
+    void setSheetSource(const SpriteAsset *asset, uint16_t srcX, uint16_t srcY,
+                        uint16_t regionWidth, uint16_t regionHeight) {
+      useSheetSource = true;
+      spriteAsset = asset;
+      sheetBitmap = NULL;
+      sheetMask = NULL;
+      sheetWidth = asset->sheetWidth;
+      sheetSrcX = srcX;
+      sheetSrcY = srcY;
+      width = regionWidth;
+      height = regionHeight;
+    }
+
+    void setSpriteAsset(const SpriteAsset *asset) {
+      spriteAsset = asset;
+      useSheetSource = false;
+      sheetBitmap = NULL;
+      sheetMask = NULL;
+      if (asset != NULL) {
+        width = asset->sheetWidth;
+        height = asset->sheetHeight;
+        sheetWidth = asset->sheetWidth;
+        sheetSrcX = 0;
+        sheetSrcY = 0;
+      }
+    }
+
+    const SpriteAsset *getSpriteAsset() const {
+      return spriteAsset;
+    }
+
+    const uint16_t *getSheetBitmap() const {
+      return sheetBitmap;
+    }
+
+    const uint8_t *getSheetMask() const {
+      return sheetMask;
+    }
+
+    uint16_t getSheetWidth() const {
+      return sheetWidth;
+    }
+
     void clearSheetSource() {
       useSheetSource = false;
+      spriteAsset = NULL;
       sheetBitmap = NULL;
       sheetMask = NULL;
       sheetWidth = 0;
@@ -196,20 +242,29 @@ class Avatar {
         return false;
       }
 
-      const uint8_t *mask = getMask();
-      if (mask == NULL) {
-        return true;
-      }
-
       uint16_t localX = targetX - (uint16_t)this->x;
       uint16_t localY = targetY - (uint16_t)this->y;
       uint16_t srcCol = flipX ? (this->width - 1 - localX) : localX;
       if (useSheetSource) {
         uint16_t sheetX = sheetSrcX + srcCol;
         uint16_t sheetY = sheetSrcY + localY;
+        if (spriteAsset != NULL) {
+          return spriteAssetMaskBit(spriteAsset, sheetX, sheetY) != 0;
+        }
         uint16_t bytesPerSheetRow = (sheetWidth + 7) / 8;
         uint8_t maskByte = pgm_read_byte(sheetMask + (uint32_t)sheetY * bytesPerSheetRow + (sheetX >> 3));
         return (maskByte & (0x80 >> (sheetX & 7))) != 0;
+      }
+
+      if (spriteAsset != NULL) {
+        return spriteAssetMaskBit(spriteAsset, srcCol, localY) != 0;
+      }
+
+      // Only plain-bitmap avatars reach here; without a mask the whole box is
+      // treated as opaque.
+      const uint8_t *mask = getMask();
+      if (mask == NULL) {
+        return true;
       }
 
       uint16_t bytesPerRow = (this->width + 7) / 8;
@@ -224,6 +279,7 @@ class Avatar {
     bool renderTainted = false;
     bool forceRedraw = false;
     bool useSheetSource = false;
+    const SpriteAsset *spriteAsset = NULL;
     const uint16_t *sheetBitmap = NULL;
     const uint8_t *sheetMask = NULL;
     uint16_t sheetWidth = 0;

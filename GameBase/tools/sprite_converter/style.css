@@ -1,0 +1,102 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #111;
+  color: #eee;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+header p {
+  color: #aaa;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+  margin-bottom: 24px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+input[type="text"],
+select,
+textarea {
+  background: #1b1b1b;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+
+button {
+  background: #2f6fed;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+canvas {
+  width: 100%;
+  image-rendering: pixelated;
+  background:
+    linear-gradient(45deg, #222 25%, transparent 25%) 0 0 / 16px 16px,
+    linear-gradient(-45deg, #222 25%, transparent 25%) 0 8px / 16px 16px,
+    #333;
+  border: 1px solid #444;
+  border-radius: 8px;
+}
+
+pre,
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+pre {
+  background: #1b1b1b;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 12px;
+  overflow: auto;
+}
+
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}

@@ -14,6 +14,8 @@
 #include "Attachment.h"
 #include "TouchInput.h"
 #include "image_acorn_catch_bg.h"
+#include "sprite_totoro_pet.h"
+// Retired baby art, kept so the swap below is a one-line revert.
 #include "sprite_totoro_baby.h"
 #include "sprite_totoro_junior.h"
 #include "sprite_totoro_adult.h"
@@ -50,23 +52,22 @@
 #define TOTORO_RGN_SIT 2
 #define TOTORO_RGN_STAND 3
 #define TOTORO_RGN_SLEEP 4
-// Extra eyes-closed frame; only the baby sheet provides it (index 5).
+// Legacy eyes-closed frame. sprite_totoro_pet aliases it to the standing body
+// because its eyes are a separate strip, so nothing draws it any more.
 #define TOTORO_RGN_BLINK 5
+// Only sprite_totoro_pet provides these (see hasEyes).
+#define TOTORO_RGN_HUNGRY 6
+#define TOTORO_RGN_DANCE 7
+#define TOTORO_RGN_SIT_SIDE 8
 // Posture cycling: pick a new random pose every few seconds; while walking,
 // alternate the two walk frames at this cadence.
 #define PET_POSE_MIN_MS 2500
 #define PET_POSE_MAX_MS 5000
 #define PET_WALK_FRAME_MS 220
-// Idle blink: while standing/sitting with eyes open, briefly shut the eyes.
-// TEMP(blink test): fast cadence so the blink is easy to observe.
-#define PET_BLINK_MIN_MS 700
-#define PET_BLINK_MAX_MS 1500
-#define PET_BLINK_DURATION_MS 150
-// Production values (restore after confirming the blink works):
-// #define PET_BLINK_MIN_MS 2200
-// #define PET_BLINK_MAX_MS 5200
-// #define PET_BLINK_DURATION_MS 150
-
+// Dancing has only the one body, so it sways by mirroring itself on the spot.
+#define PET_DANCE_FRAME_MS 240
+// Below this hunger the pet drops everything and clutches its belly.
+#define PET_HUNGRY_POSE_THRESHOLD 30
 // A single Totoro lives in the room, sized by its current growth stage and
 // bottom-aligned to this ground line.
 #define PET_GROUND_Y 300
@@ -119,6 +120,8 @@ enum TotoroPose {
   TOTORO_POSE_SIT,
   TOTORO_POSE_STAND,
   TOTORO_POSE_SLEEP,
+  TOTORO_POSE_DANCE,
+  TOTORO_POSE_HUNGRY,
   TOTORO_POSE_COUNT
 };
 
@@ -215,7 +218,6 @@ class Scene_PetTotoro : public GameScene {
 
       tickStats(now);
       updatePose(now);
-      updateBlink(now);
       updateSoot(now);
       refillPetSession(now);
 
@@ -241,6 +243,10 @@ class Scene_PetTotoro : public GameScene {
         pet.avatar->updatePos(now);
         clampPet(pet);
       }
+      updateFace(pet);  // mood may have shifted this tick
+      if (eyeAttach != NULL) {
+        eyeAttach->updatePos(now);  // ride along after the body has moved
+      }
 
       updateLifeState(now);
 
@@ -259,10 +265,11 @@ class Scene_PetTotoro : public GameScene {
     }
 
     void initScene() {
-      setBackground(acorn_catch_bg);
-      drawBackground(acorn_catch_bg);
+      setBackgroundAsset(&acorn_catch_bg);
+      drawBackgroundAsset(&acorn_catch_bg);
 
       pets[0].avatar = NULL;
+      eyeAttach = NULL;
       menuOpen = false;
       playOpen = false;
       petSession = PET_PET_MAX_SESSION;
@@ -303,6 +310,7 @@ class Scene_PetTotoro : public GameScene {
           pets[0].avatar->setVelocity(0, 0);
         }
         pets[0].pose = TOTORO_POSE_SIT;
+        setMirrored(pets[0], false);
         applyPoseFrame(pets[0], TOTORO_RGN_SIT);
       } else {
         chooseNewPose(pets[0], millis());
@@ -330,10 +338,11 @@ class Scene_PetTotoro : public GameScene {
         sootSlots[i].avatar = NULL;
         sootSlots[i].active = false;
       }
-      // GameScene::destroyScene() frees every avatar (incl. the food
-      // attachment); just drop our cached pointer/flag.
+      // GameScene::destroyScene() frees every avatar (incl. the attachments);
+      // just drop our cached pointers/flag.
       eating = false;
       foodAttach = NULL;
+      eyeAttach = NULL;
       GameScene::destroyScene();
     }
 
@@ -346,6 +355,7 @@ class Scene_PetTotoro : public GameScene {
 
     struct Pet {
       Avatar *avatar;
+      const SpriteAsset *asset;
       const uint16_t *bitmap;
       const uint8_t *mask;
       uint16_t sheetW;
@@ -354,13 +364,15 @@ class Scene_PetTotoro : public GameScene {
       uint16_t frameW;
       uint16_t frameH;
       int pose;
+      int faceRegion;   // body region currently shown
       unsigned long nextPoseMs;
-      unsigned long walkFrameMs;
-      bool walkFrameB;
-      bool hasBlink;
-      bool blinking;
-      unsigned long nextBlinkMs;
-      unsigned long blinkEndMs;
+      unsigned long poseFrameMs;
+      bool poseFrameB;
+      // The face is a separate sheet cell hung on the body, so a mood change
+      // costs one small region swap instead of a second copy of every pose.
+      bool hasEyes;
+      uint8_t eyeVariant;
+      uint8_t eyeOffsetY;
     };
 
     Pet pets[1];
@@ -380,6 +392,7 @@ class Scene_PetTotoro : public GameScene {
     int eatPhase = 0;
     unsigned long eatPhaseUntilMs = 0;
     Attachment *foodAttach = NULL;
+    Attachment *eyeAttach = NULL;
     int mealHunger = 0;
     int mealHappiness = 0;
     int mealRegion[3] = {0, 0, 0};
@@ -413,46 +426,129 @@ class Scene_PetTotoro : public GameScene {
         case PET_STAGE_ADULT:
           setupPet(pets[0], sprite_totoro_adult, sprite_totoro_adultMask,
                    SPRITE_TOTORO_ADULT_WIDTH, SPRITE_TOTORO_ADULT_HEIGHT,
-                   sprite_totoro_adultRegions, 88, 88);
+                   sprite_totoro_adultRegions);
           break;
         case PET_STAGE_JUNIOR:
           setupPet(pets[0], sprite_totoro_junior, sprite_totoro_juniorMask,
                    SPRITE_TOTORO_JUNIOR_WIDTH, SPRITE_TOTORO_JUNIOR_HEIGHT,
-                   sprite_totoro_juniorRegions, 44, 44);
+                   sprite_totoro_juniorRegions);
           break;
         case PET_STAGE_BABY:
         default:
-          setupPet(pets[0], sprite_totoro_baby, sprite_totoro_babyMask,
-                   SPRITE_TOTORO_BABY_WIDTH, SPRITE_TOTORO_BABY_HEIGHT,
-                   sprite_totoro_babyRegions, 75, 81);
-          pets[0].hasBlink = true;  // baby sheet has an eyes-closed frame
+          setupPet(pets[0], &sprite_totoro_pet, SPRITE_TOTORO_PET_SHEET_WIDTH,
+                   SPRITE_TOTORO_PET_SHEET_HEIGHT, sprite_totoro_petRegions);
+          setupFace(pets[0]);
           break;
       }
     }
 
+    // Fields every stage shares; the caller still has to attach the avatar.
+    void initPetCommon(Pet &p, const SpriteSheetRegion *regions, const SpriteSheetRegion &stand) {
+      p.regions = regions;
+      p.frameW = stand.width;
+      p.frameH = stand.height;
+      p.pose = TOTORO_POSE_STAND;
+      p.faceRegion = TOTORO_RGN_STAND;
+      p.poseFrameB = false;
+      p.poseFrameMs = millis();
+      p.nextPoseMs = millis() + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
+      p.hasEyes = false;
+      p.eyeVariant = 0xFF;  // no strip applied yet
+      p.eyeOffsetY = 0;
+    }
+
+    void setupPet(Pet &p, const SpriteAsset *asset, uint16_t sheetW, uint16_t sheetH,
+                  const SpriteSheetRegion *regions) {
+      p.asset = asset;
+      p.bitmap = NULL;
+      p.mask = NULL;
+      p.sheetW = sheetW;
+      p.sheetH = sheetH;
+      SpriteSheetRegion stand = SpriteSheet::readRegion(regions, TOTORO_RGN_STAND);
+      initPetCommon(p, regions, stand);
+      int16_t x = (SCREENWIDTH - (int16_t)p.frameW) / 2;
+      int16_t y = PET_GROUND_Y - (int16_t)p.frameH;
+      SpriteSheet sheet(asset);
+      p.avatar = sheet.createAvatar(x, y, stand);
+      appendAvatar(p.avatar);
+    }
+
     void setupPet(Pet &p, const uint16_t *bitmap, const uint8_t *mask,
-                  uint16_t sheetW, uint16_t sheetH, const SpriteSheetRegion *regions,
-                  uint16_t frameW, uint16_t frameH) {
+                  uint16_t sheetW, uint16_t sheetH, const SpriteSheetRegion *regions) {
+      p.asset = NULL;
       p.bitmap = bitmap;
       p.mask = mask;
       p.sheetW = sheetW;
       p.sheetH = sheetH;
-      p.regions = regions;
-      p.frameW = frameW;
-      p.frameH = frameH;
-      p.pose = TOTORO_POSE_STAND;
-      p.walkFrameB = false;
-      p.walkFrameMs = millis();
-      p.nextPoseMs = millis() + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
-      p.hasBlink = false;
-      p.blinking = false;
-      p.nextBlinkMs = millis() + PET_BLINK_MIN_MS + random(0, PET_BLINK_MAX_MS - PET_BLINK_MIN_MS);
-      p.blinkEndMs = 0;
-      int16_t x = (SCREENWIDTH - (int16_t)frameW) / 2;
-      int16_t y = PET_GROUND_Y - (int16_t)frameH;  // bottom-align to the ground line
+      SpriteSheetRegion stand = SpriteSheet::readRegion(regions, TOTORO_RGN_STAND);
+      initPetCommon(p, regions, stand);
+      int16_t x = (SCREENWIDTH - (int16_t)p.frameW) / 2;
+      int16_t y = PET_GROUND_Y - (int16_t)p.frameH;  // bottom-align to the ground line
       SpriteSheet sheet(bitmap, mask, sheetW, sheetH);
-      p.avatar = sheet.createAvatar(x, y, SpriteSheet::readRegion(regions, TOTORO_RGN_STAND));
+      p.avatar = sheet.createAvatar(x, y, stand);
       appendAvatar(p.avatar);
+    }
+
+    // Hang the eye/mouth strip on the body. Only sprite_totoro_pet ships the
+    // separate face cells; the older sheets have their eyes painted on.
+    void setupFace(Pet &p) {
+      if (p.avatar == NULL) {
+        return;
+      }
+      p.hasEyes = true;
+      SpriteSheetRegion eye = SpriteSheet::readRegion(p.regions, SPRITE_TOTORO_PET_EYE_REGION);
+      eyeAttach = new Attachment(SPRITE_TOTORO_PET_EYE_OFFSET_X, 0, p.avatar,
+                                 eye.width, eye.height, NULL, NULL);
+      appendAvatar(eyeAttach);  // appended after the body -> drawn on top of it
+      updateFace(p);
+    }
+
+    // Happiness picks the expression. Bands are lower-inclusive, matching the
+    // strips left to right in assets/totoro_parts_source.png.
+    static uint8_t eyeVariantForHappiness(int happiness) {
+      if (happiness >= 80) return 1;  // eye 2: shut, laughing
+      if (happiness >= 60) return 4;  // eye 5: open, smiling
+      if (happiness >= 40) return 2;  // eye 3: open, neutral
+      if (happiness >= 20) return 0;  // eye 1: shut, content
+      return 3;                       // eye 4: shut, unhappy
+    }
+
+    // Re-point the face at the mood's strip and at the current pose's eye
+    // socket. Cheap to call every tick: it bails out unless something moved.
+    void updateFace(Pet &p) {
+      if (!p.hasEyes || eyeAttach == NULL || p.avatar == NULL) {
+        return;
+      }
+      if (p.faceRegion >= SPRITE_TOTORO_PET_BODY_REGION_COUNT) {
+        return;
+      }
+      uint8_t variant = eyeVariantForHappiness(PetTotoroState::stats().happiness);
+      uint8_t offsetY = pgm_read_byte(&sprite_totoro_petEyeOffsetY[p.faceRegion]);
+      bool flip = p.avatar->flipX;
+      if (variant == p.eyeVariant && offsetY == p.eyeOffsetY && flip == eyeAttach->flipX) {
+        return;
+      }
+
+      if (variant != p.eyeVariant) {
+        p.eyeVariant = variant;
+        SpriteSheet sheet(p.asset);
+        sheet.applyRegion(eyeAttach, SpriteSheet::readRegion(
+                                         p.regions, SPRITE_TOTORO_PET_EYE_REGION + variant));
+      }
+      p.eyeOffsetY = offsetY;
+      // Cells are mirror-symmetric about the eye centre, so only Y moves.
+      eyeAttach->setAttachOffset(SPRITE_TOTORO_PET_EYE_OFFSET_X, offsetY);
+      eyeAttach->setFlipX(flip);
+      eyeAttach->updatePos(millis());
+      eyeAttach->requestRedraw();
+    }
+
+    // Every pose is drawn facing left or head-on, so mirroring is what turns
+    // the pet to face right.
+    void setMirrored(Pet &p, bool mirrored) {
+      if (p.avatar != NULL) {
+        p.avatar->setFlipX(mirrored);
+      }
     }
 
     void clampPet(Pet &p) {
@@ -462,6 +558,9 @@ class Scene_PetTotoro : public GameScene {
       if (p.avatar->x < PET_WALK_MIN_X) {
         p.avatar->x = PET_WALK_MIN_X;
         p.avatar->velocity.x = fabs(p.avatar->velocity.x);
+        if (p.pose == TOTORO_POSE_WALK) {
+          setMirrored(p, true);  // bounced off the left wall, now heading right
+        }
         p.avatar->requestRedraw();
       }
       // Wider pets get less horizontal room; clamp against their own width.
@@ -469,6 +568,9 @@ class Scene_PetTotoro : public GameScene {
       if (p.avatar->x > maxX) {
         p.avatar->x = maxX;
         p.avatar->velocity.x = -fabs(p.avatar->velocity.x);
+        if (p.pose == TOTORO_POSE_WALK) {
+          setMirrored(p, false);
+        }
         p.avatar->requestRedraw();
       }
     }
@@ -477,9 +579,16 @@ class Scene_PetTotoro : public GameScene {
       if (p.avatar == NULL) {
         return;
       }
-      SpriteSheet sheet(p.bitmap, p.mask, p.sheetW, p.sheetH);
-      sheet.applyRegion(p.avatar, SpriteSheet::readRegion(p.regions, regionIndex));
+      if (p.asset != NULL) {
+        SpriteSheet sheet(p.asset);
+        sheet.applyRegion(p.avatar, SpriteSheet::readRegion(p.regions, regionIndex));
+      } else {
+        SpriteSheet sheet(p.bitmap, p.mask, p.sheetW, p.sheetH);
+        sheet.applyRegion(p.avatar, SpriteSheet::readRegion(p.regions, regionIndex));
+      }
+      p.faceRegion = regionIndex;
       p.avatar->requestRedraw();
+      updateFace(p);
     }
 
     // ---- eating animation --------------------------------------------------
@@ -511,9 +620,10 @@ class Scene_PetTotoro : public GameScene {
       }
       PendingMeal::clear();
 
-      // Hold still, sitting, while eating.
+      // Hold still, sitting face-on, while eating.
       p.pose = TOTORO_POSE_SIT;
       p.avatar->setVelocity(0, 0);
+      setMirrored(p, false);
       applyPoseFrame(p, TOTORO_RGN_SIT);
 
       SpriteSheetRegion r = SpriteSheet::readRegion(sprite_grocery_foodRegions, mealRegion[0]);
@@ -546,6 +656,9 @@ class Scene_PetTotoro : public GameScene {
       if (foodAttach != NULL) {
         foodAttach->updatePos(now);
       }
+      if (eyeAttach != NULL) {
+        eyeAttach->updatePos(now);
+      }
     }
 
     void finishEating(unsigned long now) {
@@ -577,35 +690,58 @@ class Scene_PetTotoro : public GameScene {
     // left/right velocity and animates its two frames; the other poses sit still.
     void chooseNewPose(Pet &p, unsigned long now) {
       p.nextPoseMs = now + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
-      p.blinking = false;
-      p.nextBlinkMs = now + PET_BLINK_MIN_MS + random(0, PET_BLINK_MAX_MS - PET_BLINK_MIN_MS);
       if (p.avatar == NULL) {
         return;
       }
 
-      // Wander, sit, or stand. (Sleep stays disabled for now.)
-      int pick = random(0, 3);
+      const PetTotoroStats &mood = PetTotoroState::stats();
+
+      // An empty stomach beats every other urge: stand still and clutch it.
+      if (p.hasEyes && mood.hunger < PET_HUNGRY_POSE_THRESHOLD) {
+        p.pose = TOTORO_POSE_HUNGRY;
+        p.avatar->setVelocity(0, 0);
+        setMirrored(p, false);
+        applyPoseFrame(p, TOTORO_RGN_HUNGRY);
+        return;
+      }
+
+      // Wander, sit, dance, or stand. (Sleep stays disabled for now.)
+      int pick = random(0, p.hasEyes ? 4 : 3);
       p.pose = (pick == 0) ? TOTORO_POSE_WALK
              : (pick == 1) ? TOTORO_POSE_SIT
-                           : TOTORO_POSE_STAND;
-      // Ambient mood cue: a low / unhappy Totoro would rather rest than wander.
-      const PetTotoroStats &mood = PetTotoroState::stats();
+             : (pick == 2) ? TOTORO_POSE_STAND
+                           : TOTORO_POSE_DANCE;
+      // Ambient mood cue: a low / unhappy Totoro would rather rest than romp.
       if ((mood.happiness < PET_STAT_PER_PIP || mood.health < PET_STAT_PER_PIP) &&
-          p.pose == TOTORO_POSE_WALK) {
+          (p.pose == TOTORO_POSE_WALK || p.pose == TOTORO_POSE_DANCE)) {
         p.pose = TOTORO_POSE_SIT;
       }
       switch (p.pose) {
         case TOTORO_POSE_WALK: {
-          float dir = (random(0, 2) == 0) ? -PET_WALK_SPEED : PET_WALK_SPEED;
-          p.avatar->setVelocity(dir, 0);
-          p.walkFrameB = false;
-          p.walkFrameMs = now;
+          bool right = (random(0, 2) == 0);
+          p.avatar->setVelocity(right ? PET_WALK_SPEED : -PET_WALK_SPEED, 0);
+          setMirrored(p, right);
+          p.poseFrameB = false;
+          p.poseFrameMs = now;
           applyPoseFrame(p, TOTORO_RGN_WALK_A);
           break;
         }
         case TOTORO_POSE_SIT:
           p.avatar->setVelocity(0, 0);
-          applyPoseFrame(p, TOTORO_RGN_SIT);
+          // Half the time it flops down side-on, keeping the way it faced.
+          if (p.hasEyes && random(0, 2) == 0) {
+            applyPoseFrame(p, TOTORO_RGN_SIT_SIDE);
+          } else {
+            setMirrored(p, false);
+            applyPoseFrame(p, TOTORO_RGN_SIT);
+          }
+          break;
+        case TOTORO_POSE_DANCE:
+          p.avatar->setVelocity(0, 0);
+          setMirrored(p, false);
+          p.poseFrameB = false;
+          p.poseFrameMs = now;
+          applyPoseFrame(p, TOTORO_RGN_DANCE);
           break;
         // case TOTORO_POSE_SLEEP:
         //   p.avatar->setVelocity(0, 0);
@@ -614,6 +750,7 @@ class Scene_PetTotoro : public GameScene {
         case TOTORO_POSE_STAND:
         default:
           p.avatar->setVelocity(0, 0);
+          setMirrored(p, false);
           applyPoseFrame(p, TOTORO_RGN_STAND);
           break;
       }
@@ -627,55 +764,22 @@ class Scene_PetTotoro : public GameScene {
       if (p.avatar == NULL) {
         return;
       }
-      if (now >= p.nextPoseMs) {
+      // Hunger overrides the timer in both directions, so feeding the pet
+      // perks it up straight away instead of after the pose hold expires.
+      bool starving = p.hasEyes && PetTotoroState::stats().hunger < PET_HUNGRY_POSE_THRESHOLD;
+      if (now >= p.nextPoseMs || starving != (p.pose == TOTORO_POSE_HUNGRY)) {
         chooseNewPose(p, now);
         return;
       }
-      if (p.pose == TOTORO_POSE_WALK && (now - p.walkFrameMs) >= PET_WALK_FRAME_MS) {
-        p.walkFrameMs = now;
-        p.walkFrameB = !p.walkFrameB;
-        applyPoseFrame(p, p.walkFrameB ? TOTORO_RGN_WALK_B : TOTORO_RGN_WALK_A);
+      if (p.pose == TOTORO_POSE_WALK && (now - p.poseFrameMs) >= PET_WALK_FRAME_MS) {
+        p.poseFrameMs = now;
+        p.poseFrameB = !p.poseFrameB;
+        applyPoseFrame(p, p.poseFrameB ? TOTORO_RGN_WALK_B : TOTORO_RGN_WALK_A);
       }
-    }
-
-    // Region that a given pose rests on (used to restore eyes after a blink).
-    int poseBaseRegion(int pose) {
-      switch (pose) {
-        case TOTORO_POSE_WALK:  return TOTORO_RGN_WALK_A;
-        case TOTORO_POSE_SIT:   return TOTORO_RGN_SIT;
-        case TOTORO_POSE_SLEEP: return TOTORO_RGN_SLEEP;
-        case TOTORO_POSE_STAND:
-        default:                return TOTORO_RGN_STAND;
-      }
-    }
-
-    // Periodically shut the baby's eyes for a beat while it idles with them open.
-    // Sleeping already shows the closed-eye frame, and walking/sick states skip it.
-    void updateBlink(unsigned long now) {
-      if (roomState != PET_ROOM_ACTIVE || PetTotoroState::isSick()) {
-        return;
-      }
-      Pet &p = pets[0];
-      if (!p.hasBlink || p.avatar == NULL) {
-        return;
-      }
-      bool idleOpen = (p.pose == TOTORO_POSE_STAND || p.pose == TOTORO_POSE_SIT);
-      if (p.blinking) {
-        if (now >= p.blinkEndMs) {
-          p.blinking = false;
-          applyPoseFrame(p, poseBaseRegion(p.pose));
-          p.nextBlinkMs = now + PET_BLINK_MIN_MS + random(0, PET_BLINK_MAX_MS - PET_BLINK_MIN_MS);
-        }
-        return;
-      }
-      if (!idleOpen) {
-        p.nextBlinkMs = now + PET_BLINK_MIN_MS + random(0, PET_BLINK_MAX_MS - PET_BLINK_MIN_MS);
-        return;
-      }
-      if (now >= p.nextBlinkMs) {
-        p.blinking = true;
-        p.blinkEndMs = now + PET_BLINK_DURATION_MS;
-        applyPoseFrame(p, TOTORO_RGN_BLINK);
+      if (p.pose == TOTORO_POSE_DANCE && (now - p.poseFrameMs) >= PET_DANCE_FRAME_MS) {
+        p.poseFrameMs = now;
+        p.poseFrameB = !p.poseFrameB;
+        setMirrored(p, p.poseFrameB);
       }
     }
 
@@ -734,6 +838,7 @@ class Scene_PetTotoro : public GameScene {
         pets[0].avatar->setVelocity(0, 0);
       }
       pets[0].pose = TOTORO_POSE_SIT;
+      setMirrored(pets[0], false);
       applyPoseFrame(pets[0], TOTORO_RGN_SIT);
       addSound(NOTE_G3, noteDurationMs(10, 500));
       addSound(NOTE_E3, noteDurationMs(10, 500));

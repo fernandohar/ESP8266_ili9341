@@ -3,61 +3,34 @@
   "author": "Fernando",
   "editor": "wokwi",
   "parts": [
-    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
-    { "type": "board-ili9341-cap-touch", "id": "tft", "top": -19.2, "left": 288, "attrs": {} },
-    {
-      "type": "wokwi-buzzer",
-      "id": "speaker",
-      "top": 268.8,
-      "left": 288,
-      "attrs": { "volume": "0.2" }
-    },
-    {
-      "type": "wokwi-pushbutton",
-      "id": "btnLeft",
-      "top": 384,
-      "left": 307.2,
-      "attrs": { "color": "green", "label": "Left" }
-    },
-    {
-      "type": "wokwi-pushbutton",
-      "id": "btnHome",
-      "top": 384,
-      "left": 403.2,
-      "attrs": { "color": "blue", "label": "Home" }
-    },
-    {
-      "type": "wokwi-pushbutton",
-      "id": "btnRight",
-      "top": 384,
-      "left": 499.2,
-      "attrs": { "color": "red", "label": "Right" }
-    }
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 420, "left": 235, "attrs": {} },
+    { "type": "board-ili9341-cap-touch", "id": "tft", "top": 0, "left": 200, "attrs": {} },
+    { "type": "wokwi-buzzer", "id": "speaker", "top": 430, "left": 440, "attrs": {"volume": "0.2"} },
+    { "type": "wokwi-pushbutton", "id": "btnLeft", "top": 560, "left": 50, "attrs": {"color": "green", "label": "Left"} },
+    { "type": "wokwi-pushbutton", "id": "btnHome", "top": 630, "left": 50, "attrs": {"color": "blue", "label": "Home"} },
+    { "type": "wokwi-pushbutton", "id": "btnRight", "top": 700, "left": 50, "attrs": {"color": "red", "label": "Right"} }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
-
-    [ "esp:3V3", "tft:VCC", "red", [] ],
-    [ "esp:3V3", "tft:LED", "red", [] ],
-    [ "esp:GND.1", "tft:GND", "black", [] ],
-    [ "esp:18", "tft:SCK", "green", [] ],
-    [ "esp:23", "tft:MOSI", "green", [] ],
-    [ "esp:19", "tft:MISO", "green", [] ],
-    [ "esp:5", "tft:CS", "blue", [] ],
-    [ "esp:2", "tft:D/C", "purple", [] ],
-    [ "esp:21", "tft:SDA", "gray", [] ],
-    [ "esp:22", "tft:SCL", "gray", [] ],
-
-    [ "esp:16", "speaker:1", "orange", [] ],
-    [ "esp:GND.2", "speaker:2", "black", [] ],
-
-    [ "btnLeft:1.l", "esp:13", "green", [] ],
-    [ "btnLeft:2.l", "esp:GND.3", "black", [] ],
-    [ "btnHome:1.l", "esp:27", "blue", [] ],
-    [ "btnHome:2.l", "esp:GND.3", "black", [] ],
-    [ "btnRight:1.l", "esp:14", "green", [] ],
-    [ "btnRight:2.l", "esp:GND.3", "black", [] ]
+    [ "esp:3V3", "tft:VCC", "red", ["h-12", "v-143.8", "*", "v17.76"] ],
+    [ "esp:3V3", "tft:LED", "red", ["h-20", "v-133.8", "*", "v27.76"] ],
+    [ "esp:GND.3", "tft:GND", "black", ["h12", "v-181.4", "*", "v37.76"] ],
+    [ "esp:23", "tft:MOSI", "green", ["h20", "v-123.4", "*", "v47.76"] ],
+    [ "esp:18", "tft:SCK", "green", ["h28", "v-180.6", "*", "v57.76"] ],
+    [ "esp:19", "tft:MISO", "green", ["h36", "v-161.0", "*", "v67.76"] ],
+    [ "esp:5", "tft:CS", "blue", ["h44", "v-170.2", "*", "v77.76"] ],
+    [ "esp:2", "tft:D/C", "purple", ["h52", "v-208.2", "*", "v87.76"] ],
+    [ "esp:22", "tft:SCL", "gray", ["h60", "v-83.0", "*", "v97.76"] ],
+    [ "esp:21", "tft:SDA", "gray", ["h68", "v-101.8", "*", "v107.76"] ],
+    [ "esp:16", "speaker:1", "orange", ["h76", "v45.6", "*", "v86"] ],
+    [ "esp:GND.2", "speaker:2", "black", ["h72", "v171.2", "*", "v106"] ],
+    [ "btnLeft:1.r", "esp:13", "green", ["h20", "v10.2", "*", "h-20"] ],
+    [ "btnHome:1.r", "esp:27", "blue", ["h28", "v-98.2", "*", "h-28"] ],
+    [ "btnRight:1.r", "esp:14", "green", ["h36", "v-158.6", "*", "h-36"] ],
+    [ "btnLeft:2.l", "btnHome:2.l", "black", ["h-12", "*", "h-12"] ],
+    [ "btnHome:2.l", "btnRight:2.l", "black", ["h-12", "*", "h-12"] ],
+    [ "btnRight:2.r", "esp:GND.1", "black", ["h20", "*", "v158.4", "h-24"] ]
   ],
   "dependencies": {}
 }

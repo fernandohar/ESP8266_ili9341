@@ -1,7 +1,44 @@
 #include "GameScene.h"
 #include "SoundPlayer.h"
+#include "SpriteAsset.h"
 
 #define min(X, Y) (((X)<(Y))?(X):(Y))
+
+static uint16_t avatarSheetPixelRgb565(Avatar *avatar, uint16_t sheetX, uint16_t sheetY) {
+  if (avatar->getSpriteAsset() != NULL) {
+    return spriteAssetPixelRgb565(avatar->getSpriteAsset(), sheetX, sheetY);
+  }
+  return pgm_read_word_far(
+      avatar->getSheetBitmap() + (uint32_t)sheetY * avatar->getSheetWidth() + sheetX);
+}
+
+static uint8_t avatarSheetMaskBit(Avatar *avatar, uint16_t sheetX, uint16_t sheetY) {
+  if (avatar->getSpriteAsset() != NULL) {
+    return spriteAssetMaskBit(avatar->getSpriteAsset(), sheetX, sheetY);
+  }
+  uint16_t sheetBw = (avatar->getSheetWidth() + 7) / 8;
+  uint8_t maskByte = pgm_read_byte(
+      avatar->getSheetMask() + (uint32_t)sheetY * sheetBw + (sheetX >> 3));
+  return maskByte & (0x80 >> (sheetX & 7));
+}
+
+static uint16_t avatarLocalPixelRgb565(Avatar *avatar, uint16_t localX, uint16_t localY) {
+  if (avatar->getSpriteAsset() != NULL) {
+    return spriteAssetPixelRgb565(avatar->getSpriteAsset(), localX, localY);
+  }
+  const uint16_t *bitmap = avatar->getBitmap();
+  return pgm_read_word_near(bitmap + (uint32_t)localY * avatar->width + localX);
+}
+
+static uint8_t avatarLocalMaskBit(Avatar *avatar, uint16_t localX, uint16_t localY) {
+  if (avatar->getSpriteAsset() != NULL) {
+    return spriteAssetMaskBit(avatar->getSpriteAsset(), localX, localY);
+  }
+  const uint8_t *mask = avatar->getMask();
+  uint16_t bw = (avatar->width + 7) / 8;
+  uint8_t maskByte = pgm_read_byte(&(mask[(uint32_t)localY * bw + (localX >> 3)]));
+  return maskByte & (0x80 >> (localX & 7));
+}
 
 void GameScene :: destroyScene() {
   numAvatar = 0;
@@ -24,17 +61,38 @@ void GameScene :: setBackground(const uint16_t* background) {
 }
 void GameScene :: setBackground(const uint16_t* background, const uint32_t backgroundWidth) {
   this->background = background;
+  this->backgroundAsset = NULL;
   this->backgroundWidth = backgroundWidth;
+  this->backgroundXOffset = 0;
+  this->backgroundTiled = false;
+}
+void GameScene :: setBackgroundAsset(const SpriteAsset *asset) {
+  setBackgroundAsset(asset, SCREENWIDTH);
+}
+void GameScene :: setBackgroundAsset(const SpriteAsset *asset, const uint32_t assetWidth) {
+  this->backgroundAsset = asset;
+  this->background = NULL;
+  this->backgroundWidth = assetWidth;
   this->backgroundXOffset = 0;
   this->backgroundTiled = false;
 }
 void GameScene :: setBackgroundTile(const uint16_t* tile, uint16_t tileWidth, uint16_t tileHeight) {
   this->background = tile;
+  this->backgroundAsset = NULL;
   this->backgroundWidth = tileWidth;
   this->backgroundXOffset = 0;
   this->backgroundTiled = true;
   this->backgroundTileWidth = tileWidth;
   this->backgroundTileHeight = tileHeight;
+}
+void GameScene :: setBackgroundTileAsset(const SpriteAsset *tile) {
+  this->backgroundAsset = tile;
+  this->background = NULL;
+  this->backgroundWidth = tile->sheetWidth;
+  this->backgroundXOffset = 0;
+  this->backgroundTiled = true;
+  this->backgroundTileWidth = tile->sheetWidth;
+  this->backgroundTileHeight = tile->sheetHeight;
 }
 void GameScene :: setBackgroundColor(const uint16_t bgColor) {
   this->bgColor = bgColor;
@@ -63,6 +121,26 @@ void GameScene :: setBackgroundOffset(uint16_t imageXOffset) {
   backgroundXOffset = imageXOffset;
 }
 
+
+void GameScene :: drawBackgroundAsset(const SpriteAsset *asset) {
+  int8_t bufIdx = 0;
+  _tft->endWrite();
+  _tft->startWrite();
+  _tft->setAddrWindow(0, 0, SCREENWIDTH, SCREENHEIGHT);
+
+  for (uint16_t y = 0; y < SCREENHEIGHT; y++) {
+    uint16_t *destPtr = &renderbuf[bufIdx][0];
+    for (uint16_t x = 0; x < SCREENWIDTH; x++) {
+      uint16_t sheetX = (uint16_t)((backgroundXOffset + x) % asset->sheetWidth);
+      uint16_t sheetY = (uint16_t)(y % asset->sheetHeight);
+      *destPtr++ = spriteAssetPixelRgb565(asset, sheetX, sheetY);
+    }
+    _tft->pushPixels(&renderbuf[bufIdx][0], SCREENWIDTH);
+    bufIdx = 1 - bufIdx;
+  }
+
+  _tft->endWrite();
+}
 
 void GameScene :: drawBackground(const uint16_t* bitmap, uint16_t imageWidth, uint16_t imageXOffset) {
   backgroundXOffset = imageXOffset;
@@ -174,10 +252,26 @@ void GameScene :: renderFullScreen() {
 void GameScene::drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *destPtr) {
   if (backgroundTiled && backgroundTileWidth > 0 && backgroundTileHeight > 0) {
     uint16_t tileY = y % backgroundTileHeight;
+    if (backgroundAsset != NULL) {
+      for (uint32_t i = 0; i < width; ++i) {
+        uint16_t tileX = (uint16_t)((x + i) % backgroundTileWidth);
+        *destPtr++ = spriteAssetPixelRgb565(backgroundAsset, tileX, tileY);
+      }
+      return;
+    }
     uint32_t rowBase = (uint32_t)tileY * backgroundTileWidth;
     for (uint32_t i = 0; i < width; ++i) {
       uint16_t tileX = (uint16_t)((x + i) % backgroundTileWidth);
       *destPtr++ = pgm_read_word_far(background + rowBase + tileX);
+    }
+    return;
+  }
+
+  if (backgroundAsset != NULL) {
+    for (uint32_t i = 0; i < width; ++i) {
+      uint16_t sheetX = (uint16_t)((backgroundXOffset + x + i) % backgroundAsset->sheetWidth);
+      uint16_t sheetY = (uint16_t)(y % backgroundAsset->sheetHeight);
+      *destPtr++ = spriteAssetPixelRgb565(backgroundAsset, sheetX, sheetY);
     }
     return;
   }
@@ -213,7 +307,6 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
   if (avatar->usesSheetSource()) {
     uint16_t renderwidth = maxWidth;
     uint16_t bitmapoffset = srcStartX;
-    uint16_t sheetBw = (avatar->sheetWidth + 7) / 8;
 
     if (srcStartX == 0 && avatar->x < 0) {
       renderwidth = (avatar->width + avatar->x);
@@ -231,10 +324,8 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
       uint16_t srcCol = avatar->flipX ? (avatar->width - 1 - localX) : localX;
       uint16_t sheetX = avatar->sheetSrcX + srcCol;
       uint16_t sheetY = avatar->sheetSrcY + y;
-      uint8_t maskByte = pgm_read_byte(avatar->sheetMask + (uint32_t)sheetY * sheetBw + (sheetX >> 3));
-      if (maskByte & (0x80 >> (sheetX & 7))) {
-        uint16_t c = pgm_read_word_far(avatar->sheetBitmap + (uint32_t)sheetY * avatar->sheetWidth + sheetX);
-        *destPtr++ = c;
+      if (avatarSheetMaskBit(avatar, sheetX, sheetY)) {
+        *destPtr++ = avatarSheetPixelRgb565(avatar, sheetX, sheetY);
       } else {
         *destPtr++;
       }
@@ -250,7 +341,8 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
   uint16_t maskoffset = 0;
   uint8_t maskByte = 0;
 
-  if (srcStartX == 0 && avatar->x < 0) {
+  bool clippedLeft = (srcStartX == 0 && avatar->x < 0);
+  if (clippedLeft) {
     renderwidth = (avatar->width + avatar->x);
     if (renderwidth > maxWidth) {
       renderwidth = maxWidth;
@@ -258,12 +350,30 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
     if (renderwidth == 0) {
       return;
     }
-
-    maskRead = false;
     bitmapoffset = (uint16_t)abs(avatar->x);
+  }
+
+  // Asset-backed avatars carry their pixels/mask in the SpriteAsset, so
+  // getMask() is NULL for them: they must be sampled per pixel before any of
+  // the flat-mask prefetching below dereferences that NULL.
+  if (avatar->getSpriteAsset() != NULL) {
+    for (uint16_t x = 0; x < renderwidth; x++) {
+      uint16_t localX = x + bitmapoffset;
+      uint16_t srcCol = avatar->flipX ? (avatar->width - 1 - localX) : localX;
+      if (avatarLocalMaskBit(avatar, srcCol, y)) {
+        *destPtr++ = avatarLocalPixelRgb565(avatar, srcCol, y);
+      } else {
+        destPtr++;
+      }
+    }
+    return;
+  }
+
+  if (clippedLeft) {
+    maskRead = false;
     const uint8_t* mask = avatar->getMask();
     maskByte = pgm_read_byte(&(mask[bw * y + bitmapoffset / 8]));
-    maskoffset = (uint16_t)abs(avatar->x) % 8;
+    maskoffset = bitmapoffset % 8;
     maskByte <<= maskoffset;
   } else if (srcStartX > 0) {
     maskRead = false;
@@ -274,16 +384,10 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
   }
 
   if (avatar->flipX) {
-    // Mirrored: read the source column from the opposite edge. The fast
-    // incremental mask walk below assumes left-to-right order, so sample the
-    // mask bit directly here instead.
-    const uint8_t* mask = avatar->getMask();
-    const uint16_t* bitmap = avatar->getBitmap();
     for (uint16_t x = 0; x < renderwidth; x++) {
       uint16_t srcCol = avatar->width - 1 - (x + bitmapoffset);
-      uint8_t mb = pgm_read_byte(&(mask[y * bw + (srcCol >> 3)]));
-      if (mb & (0x80 >> (srcCol & 7))) {
-        *destPtr++ = pgm_read_word_near(bitmap + (y * avatar->width) + srcCol);
+      if (avatarLocalMaskBit(avatar, srcCol, y)) {
+        *destPtr++ = avatarLocalPixelRgb565(avatar, srcCol, y);
       } else {
         destPtr++;
       }

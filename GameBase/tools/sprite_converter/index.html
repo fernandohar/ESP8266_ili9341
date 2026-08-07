@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GameBase Sprite Converter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>GameBase Sprite Converter</h1>
+      <p>Convert PNG sprites to PROGMEM headers with 4/8/16-bit palette color and a 1-bit transparency mask.</p>
+    </header>
+
+    <section class="controls">
+      <label>
+        PNG file(s)
+        <input type="file" id="fileInput" accept="image/png" multiple>
+      </label>
+
+      <label>
+        Symbol name
+        <input type="text" id="symbolName" value="sprite_example" placeholder="sprite_foo">
+      </label>
+
+      <label>
+        Bits per pixel
+        <select id="bppSelect">
+          <option value="4">4-bit (max 16 colors)</option>
+          <option value="8" selected>8-bit (max 256 colors)</option>
+          <option value="16">16-bit RGB565</option>
+        </select>
+      </label>
+
+      <label>
+        Multi-frame layout
+        <select id="layoutSelect">
+          <option value="horizontal">Horizontal strip</option>
+          <option value="vertical">Vertical strip</option>
+        </select>
+      </label>
+
+      <label>
+        Region labels
+        <input type="text" id="regionLabels" placeholder="idle,walk,blink">
+      </label>
+
+      <label>
+        Transparent RGB
+        <input type="text" id="transparentRgb" placeholder="255,0,255">
+      </label>
+
+      <label class="checkbox">
+        <input type="checkbox" id="legacyMode">
+        Legacy 16-bit header (existing GameBase format)
+      </label>
+
+      <div class="buttons">
+        <button id="convertBtn" type="button">Preview &amp; Generate</button>
+        <button id="downloadBtn" type="button" disabled>Download .h</button>
+      </div>
+    </section>
+
+    <section class="preview-grid">
+      <div>
+        <h2>Source preview</h2>
+        <canvas id="sourceCanvas"></canvas>
+      </div>
+      <div>
+        <h2>Quantized preview</h2>
+        <canvas id="previewCanvas"></canvas>
+      </div>
+    </section>
+
+    <section>
+      <h2>Stats</h2>
+      <pre id="stats"></pre>
+    </section>
+
+    <section>
+      <h2>Generated header</h2>
+      <textarea id="headerOutput" rows="24" readonly spellcheck="false"></textarea>
+    </section>
+  </main>
+
+  <script src="sprite_converter.js"></script>
+</body>
+</html>
