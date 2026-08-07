@@ -293,12 +293,6 @@ void GameScene::drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *
     
   }
 }
-void GameScene::fillBufferWithColor(uint16_t width, uint16_t color, uint16_t * destPtr) {
-  for (int i = 0; i < width; ++i) {
-    *destPtr++ = color;
-  }
-}
-
 void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y, uint16_t maxWidth, uint16_t srcStartX) {
   if (maxWidth == 0) {
     return;
@@ -327,7 +321,7 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
       if (avatarSheetMaskBit(avatar, sheetX, sheetY)) {
         *destPtr++ = avatarSheetPixelRgb565(avatar, sheetX, sheetY);
       } else {
-        *destPtr++;
+        destPtr++;
       }
     }
     return;
@@ -410,7 +404,7 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
       uint16_t c = pgm_read_word_near(bitmap + (y * avatar->width) + x + bitmapoffset);
       *destPtr++ = c;
     } else {
-      *destPtr++;
+      destPtr++;
     }
   }
 }
@@ -557,25 +551,18 @@ void GameScene  :: renderScene(boolean refreshBackground) {
     }
     //Find Min / max area to draw. minx, miny, maxX, maxY are in Screen coordinates
     int16_t minx, miny, maxx, maxy;
-    
-    Avatar* toBeRendered[numRenderableAvatar]; 
-    int toBeRendered2RenderableMap[numRenderableAvatar];
-    int toBeRenderedIndex;
 
     _tft->endWrite();
     _tft->startWrite();
 
     //Get Discrete render area with Avatar overlapping inside
     for (int i = 0; i < numRenderableAvatar; ++i) {
-      toBeRenderedIndex = 0;
       //If the Avatar's renderable area has been checked and overlaps previous avatar, we can skip checking this avatar
       if (rendered[i]) {
         continue;
       }
       rendered[i] = true;
-      toBeRendered[toBeRenderedIndex++] = renderableAvatar[i];
-      
-  
+
       minx = renderableMinx[i];
       miny = renderableMiny[i];
       maxx = renderableMaxx[i];
@@ -597,7 +584,6 @@ void GameScene  :: renderScene(boolean refreshBackground) {
           maxx = (maxx > renderableMaxx[j]) ? maxx : renderableMaxx[j];
           maxy = (maxy > renderableMaxy[j]) ? maxy : renderableMaxy[j];
           rendered[j] = true;
-          toBeRendered[toBeRenderedIndex++] = renderableAvatar[i];
           //Serial.printf("Overlap #%d, %d \n", i, j);
           
           /*
@@ -839,56 +825,6 @@ int GameScene::collectRowRedrawSpans(int16_t screenY, int16_t clipMinx, int16_t 
   }
   return merged;
 }
-
-void GameScene::markAvatarsUnder(Avatar* mover) {
-  if (mover == NULL) {
-    return;
-  }
-
-  int moverIndex = -1;
-  for (int i = 0; i < numAvatar; ++i) {
-    if (avatars[i] == mover) {
-      moverIndex = i;
-      break;
-    }
-  }
-  if (moverIndex <= 0) {
-    return;
-  }
-
-  int16_t moverMinx = (int16_t)mover->x;
-  int16_t moverMiny = (int16_t)mover->y;
-  int16_t moverMaxx = (int16_t)(mover->x + mover->width - 1);
-  int16_t moverMaxy = (int16_t)(mover->y + mover->height - 1);
-
-  for (int i = 0; i < moverIndex; ++i) {
-    Avatar* avatar = avatars[i];
-    if (avatar == NULL) {
-      continue;
-    }
-    int16_t avatarMinx = (int16_t)avatar->x;
-    int16_t avatarMiny = (int16_t)avatar->y;
-    int16_t avatarMaxx = (int16_t)(avatar->x + avatar->width - 1);
-    int16_t avatarMaxy = (int16_t)(avatar->y + avatar->height - 1);
-    if (avatarMaxx < moverMinx || avatarMinx > moverMaxx ||
-        avatarMaxy < moverMiny || avatarMiny > moverMaxy) {
-      continue;
-    }
-    avatar->renderTainted = true;
-  }
-}
-
-int GameScene::getNextRenderAvatar(int previousMin, int toBeRendered2RenderableMap[], int toBeRenderedIndex) {
-  int minLayerIndex = 999;
-  for (int i = 0; i < toBeRenderedIndex; ++i) {
-    if (toBeRendered2RenderableMap[i] <= previousMin) {
-      continue;
-    }
-    minLayerIndex = min(minLayerIndex, toBeRendered2RenderableMap[i]);
-  }
-  return minLayerIndex;
-}
-
 
 void GameScene :: addSound(int soundTone, int soundDuration) {
   SoundPlayer::enqueue(soundTone, soundDuration);

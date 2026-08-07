@@ -64,38 +64,7 @@ class GameScene {
       }
       return (60000 * 4) / tempoBpm / noteDivisor;
     }
-    
 
-    boolean boundToScreen(Avatar* avatar) {
-      boolean reversed = false;
-      if ( (avatar->x <= 0) || ((avatar->x + avatar->width) >= SCREENWIDTH)) {
-        avatar->velocity.x *= -1;//Change the movement direction
-        avatar->x = (avatar->x <= 0) ? 0 : SCREENWIDTH - avatar->width ; //Clip the image within the screen
-        reversed = true;
-      }
-      if (avatar->y <= 0) {
-        avatar->y = 0;
-        //
-#ifdef PHYSICS
-        avatar->velocity.y *= -0.8; //We hit the top, lost energy
-#else
-        avatar->velocity.y *= -1;
-#endif
-        reversed = true;
-      } else if ((avatar->y + avatar->height) >= SCREENHEIGHT) {
-        avatar->y = SCREENHEIGHT - avatar->height;
-
-#ifdef PHYSICS
-        avatar->velocity.y *= -0.85; //suppose we have energy lost in both x and y when hit the floor
-        avatar->velocity.x *= 0.9;
-#else
-        avatar->velocity.y *= -1;
-#endif
-        reversed = true;
-      }
-
-      return reversed;
-    }
   protected:
     TFT_eSPI *_tft;
     Avatar* avatars[MAX_AVATAR] = {};
@@ -123,10 +92,7 @@ class GameScene {
     void renderScene() ;
     void renderScene(boolean refreshBackground);
     void renderFullScreen();
-    void markAvatarsUnder(Avatar* mover);
     void drawBg2Buffer(uint16_t x, uint16_t y, uint16_t width, uint16_t *destPtr);
-    
-    void fillBufferWithColor(uint16_t width, uint16_t color, uint16_t * destPtr);
 
     void drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y, uint16_t maxWidth, uint16_t srcStartX = 0);
     
@@ -134,14 +100,11 @@ class GameScene {
     void enableDebug() { isDebugEnabled = true; }
     void disableDebug() {isDebugEnabled = false; }
   private:
-    int getNextRenderAvatar(int previousMin, int toBeRendered2RenderableMap[], int toBeRenderedIndex);
     int collectRowRedrawSpans(int16_t screenY, int16_t clipMinx, int16_t clipMaxx,
                               int16_t unionDirtyMinx, int16_t unionDirtyMaxx,
                               int16_t unionDirtyMiny, int16_t unionDirtyMaxy,
                               Avatar** shortlist, const bool* fullRedraw, int shortlistCount,
                               int16_t* spanStarts, int16_t* spanEnds, int maxSpans);
-    uint16_t debugColor = rgb565(230, 157, 132);
-
 };
 
 #endif
