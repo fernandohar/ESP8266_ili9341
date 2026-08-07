@@ -14,10 +14,10 @@
 #include "Attachment.h"
 #include "TouchInput.h"
 #include "image_acorn_catch_bg.h"
+// Baby and adult are the only stages; a third would cost another full sheet to
+// draw. The retired sprite_totoro_baby.h and sprite_totoro_junior.h are still in
+// src/ - re-adding an include is all it takes to bring either back.
 #include "sprite_totoro_pet.h"
-// Retired baby art, kept so the swap below is a one-line revert.
-#include "sprite_totoro_baby.h"
-#include "sprite_totoro_junior.h"
 #include "sprite_totoro_adult.h"
 #include "sprite_soot.h"
 #include "sprite_grocery_food.h"
@@ -46,16 +46,16 @@
 // Care XP awarded per soot cleaned (feeding/petting/game wins add more later).
 #define PET_CARE_XP_CLEAN 10
 
-// Totoro sprite-sheet region order (shared by baby/junior/adult sheets).
+// Totoro sprite-sheet region order (shared by the baby and adult sheets).
 #define TOTORO_RGN_WALK_A 0
 #define TOTORO_RGN_WALK_B 1
 #define TOTORO_RGN_SIT 2
 #define TOTORO_RGN_STAND 3
 #define TOTORO_RGN_SLEEP 4
-// Legacy eyes-closed frame. sprite_totoro_pet aliases it to the standing body
-// because its eyes are a separate strip, so nothing draws it any more.
+// Legacy eyes-closed frame. The baby/adult sheets alias it to the standing
+// body because their eyes are a separate strip, so nothing draws it any more.
 #define TOTORO_RGN_BLINK 5
-// Only sprite_totoro_pet provides these (see hasEyes).
+// Only the baby and adult sheets provide these (see hasEyes).
 #define TOTORO_RGN_HUNGRY 6
 #define TOTORO_RGN_DANCE 7
 #define TOTORO_RGN_SIT_SIDE 8
@@ -371,8 +371,13 @@ class Scene_PetTotoro : public GameScene {
       // The face is a separate sheet cell hung on the body, so a mood change
       // costs one small region swap instead of a second copy of every pose.
       bool hasEyes;
-      uint8_t eyeVariant;
-      uint8_t eyeOffsetY;
+      const uint8_t *eyeBaseTable;     // per body region: sheet region of variant 0
+      const uint8_t *eyeOffsetXTable;  // per body region, mirrored when flipped
+      const uint8_t *eyeOffsetYTable;
+      uint8_t bodyRegionCount;
+      uint8_t eyeRegion;   // strip currently applied
+      uint8_t eyeAppliedX;
+      uint8_t eyeAppliedY;
     };
 
     Pet pets[1];
@@ -421,25 +426,20 @@ class Scene_PetTotoro : public GameScene {
     }
 
     // Build the single Totoro from the sprite sheet that matches its stage.
+    // Both sheets carry their eyes as separate cells and expose the same three
+    // offset tables, so setupFace() drives either one unchanged.
     void setupStagePet() {
-      switch (PetTotoroState::stage()) {
-        case PET_STAGE_ADULT:
-          setupPet(pets[0], sprite_totoro_adult, sprite_totoro_adultMask,
-                   SPRITE_TOTORO_ADULT_WIDTH, SPRITE_TOTORO_ADULT_HEIGHT,
-                   sprite_totoro_adultRegions);
-          break;
-        case PET_STAGE_JUNIOR:
-          setupPet(pets[0], sprite_totoro_junior, sprite_totoro_juniorMask,
-                   SPRITE_TOTORO_JUNIOR_WIDTH, SPRITE_TOTORO_JUNIOR_HEIGHT,
-                   sprite_totoro_juniorRegions);
-          break;
-        case PET_STAGE_BABY:
-        default:
-          setupPet(pets[0], &sprite_totoro_pet, SPRITE_TOTORO_PET_SHEET_WIDTH,
-                   SPRITE_TOTORO_PET_SHEET_HEIGHT, sprite_totoro_petRegions);
-          setupFace(pets[0]);
-          break;
+      if (PetTotoroState::stage() == PET_STAGE_ADULT) {
+        setupPet(pets[0], &sprite_totoro_adult, SPRITE_TOTORO_ADULT_SHEET_WIDTH,
+                 SPRITE_TOTORO_ADULT_SHEET_HEIGHT, sprite_totoro_adultRegions);
+        setupFace(pets[0], sprite_totoro_adultEyeBase, sprite_totoro_adultEyeOffsetX,
+                  sprite_totoro_adultEyeOffsetY, SPRITE_TOTORO_ADULT_BODY_REGION_COUNT);
+        return;
       }
+      setupPet(pets[0], &sprite_totoro_pet, SPRITE_TOTORO_PET_SHEET_WIDTH,
+               SPRITE_TOTORO_PET_SHEET_HEIGHT, sprite_totoro_petRegions);
+      setupFace(pets[0], sprite_totoro_petEyeBase, sprite_totoro_petEyeOffsetX,
+                sprite_totoro_petEyeOffsetY, SPRITE_TOTORO_PET_BODY_REGION_COUNT);
     }
 
     // Fields every stage shares; the caller still has to attach the avatar.
@@ -453,8 +453,13 @@ class Scene_PetTotoro : public GameScene {
       p.poseFrameMs = millis();
       p.nextPoseMs = millis() + PET_POSE_MIN_MS + random(0, PET_POSE_MAX_MS - PET_POSE_MIN_MS);
       p.hasEyes = false;
-      p.eyeVariant = 0xFF;  // no strip applied yet
-      p.eyeOffsetY = 0;
+      p.eyeBaseTable = NULL;
+      p.eyeOffsetXTable = NULL;
+      p.eyeOffsetYTable = NULL;
+      p.bodyRegionCount = 0;
+      p.eyeRegion = 0xFF;  // no strip applied yet
+      p.eyeAppliedX = 0;
+      p.eyeAppliedY = 0;
     }
 
     void setupPet(Pet &p, const SpriteAsset *asset, uint16_t sheetW, uint16_t sheetH,
@@ -489,28 +494,32 @@ class Scene_PetTotoro : public GameScene {
       appendAvatar(p.avatar);
     }
 
-    // Hang the eye/mouth strip on the body. Only sprite_totoro_pet ships the
-    // separate face cells; the older sheets have their eyes painted on.
-    void setupFace(Pet &p) {
+    // Hang the eye strip on the body. Both stage sheets ship their eyes as
+    // separate cells, indexed through the caller's per-pose tables.
+    void setupFace(Pet &p, const uint8_t *base, const uint8_t *offsetX,
+                   const uint8_t *offsetY, uint8_t bodyRegions) {
       if (p.avatar == NULL) {
         return;
       }
       p.hasEyes = true;
-      SpriteSheetRegion eye = SpriteSheet::readRegion(p.regions, SPRITE_TOTORO_PET_EYE_REGION);
-      eyeAttach = new Attachment(SPRITE_TOTORO_PET_EYE_OFFSET_X, 0, p.avatar,
-                                 eye.width, eye.height, NULL, NULL);
+      p.eyeBaseTable = base;
+      p.eyeOffsetXTable = offsetX;
+      p.eyeOffsetYTable = offsetY;
+      p.bodyRegionCount = bodyRegions;
+      SpriteSheetRegion eye = SpriteSheet::readRegion(p.regions, pgm_read_byte(&base[0]));
+      eyeAttach = new Attachment(0, 0, p.avatar, eye.width, eye.height, NULL, NULL);
       appendAvatar(eyeAttach);  // appended after the body -> drawn on top of it
       updateFace(p);
     }
 
-    // Happiness picks the expression. Bands are lower-inclusive, matching the
-    // strips left to right in assets/totoro_parts_source.png.
+    // Happiness picks the expression. Bands are lower-inclusive, and the
+    // returned index counts the strips left to right in the pose worksheets.
     static uint8_t eyeVariantForHappiness(int happiness) {
-      if (happiness >= 80) return 1;  // eye 2: shut, laughing
-      if (happiness >= 60) return 4;  // eye 5: open, smiling
-      if (happiness >= 40) return 2;  // eye 3: open, neutral
-      if (happiness >= 20) return 0;  // eye 1: shut, content
-      return 3;                       // eye 4: shut, unhappy
+      if (happiness >= 80) return 1;  // eye 2: happiest
+      if (happiness >= 60) return 4;  // eye 5: excited
+      if (happiness >= 40) return 2;  // eye 3: content
+      if (happiness >= 20) return 0;  // eye 1: normal
+      return 3;                       // eye 4: sad
     }
 
     // Re-point the face at the mood's strip and at the current pose's eye
@@ -519,25 +528,32 @@ class Scene_PetTotoro : public GameScene {
       if (!p.hasEyes || eyeAttach == NULL || p.avatar == NULL) {
         return;
       }
-      if (p.faceRegion >= SPRITE_TOTORO_PET_BODY_REGION_COUNT) {
+      if (p.faceRegion >= p.bodyRegionCount) {
         return;
       }
       uint8_t variant = eyeVariantForHappiness(PetTotoroState::stats().happiness);
-      uint8_t offsetY = pgm_read_byte(&sprite_totoro_petEyeOffsetY[p.faceRegion]);
+      // Side-on poses show a single eye, so the strip to use is per pose too.
+      uint8_t region = pgm_read_byte(&p.eyeBaseTable[p.faceRegion]) + variant;
+      uint8_t offsetX = pgm_read_byte(&p.eyeOffsetXTable[p.faceRegion]);
+      uint8_t offsetY = pgm_read_byte(&p.eyeOffsetYTable[p.faceRegion]);
       bool flip = p.avatar->flipX;
-      if (variant == p.eyeVariant && offsetY == p.eyeOffsetY && flip == eyeAttach->flipX) {
+      if (region == p.eyeRegion && offsetX == p.eyeAppliedX && offsetY == p.eyeAppliedY &&
+          flip == eyeAttach->flipX) {
         return;
       }
 
-      if (variant != p.eyeVariant) {
-        p.eyeVariant = variant;
+      if (region != p.eyeRegion) {
+        p.eyeRegion = region;
         SpriteSheet sheet(p.asset);
-        sheet.applyRegion(eyeAttach, SpriteSheet::readRegion(
-                                         p.regions, SPRITE_TOTORO_PET_EYE_REGION + variant));
+        sheet.applyRegion(eyeAttach, SpriteSheet::readRegion(p.regions, region));
       }
-      p.eyeOffsetY = offsetY;
-      // Cells are mirror-symmetric about the eye centre, so only Y moves.
-      eyeAttach->setAttachOffset(SPRITE_TOTORO_PET_EYE_OFFSET_X, offsetY);
+      p.eyeAppliedX = offsetX;
+      p.eyeAppliedY = offsetY;
+      // The body is centred on its own outline, so mirroring the cell moves the
+      // eye socket to the far side.
+      int16_t attachX = flip ? (int16_t)p.frameW - (int16_t)eyeAttach->width - (int16_t)offsetX
+                             : (int16_t)offsetX;
+      eyeAttach->setAttachOffset(attachX, offsetY);
       eyeAttach->setFlipX(flip);
       eyeAttach->updatePos(millis());
       eyeAttach->requestRedraw();

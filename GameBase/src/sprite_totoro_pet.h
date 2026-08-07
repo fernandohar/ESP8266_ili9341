@@ -2669,12 +2669,23 @@ static const SpriteAsset sprite_totoro_pet PROGMEM = {
 
 // --- Runtime face compositing -------------------------------------------
 // The first 9 regions are bodies; the rest are eye/mouth strips.
-// Hang region (SPRITE_TOTORO_PET_EYE_REGION + variant) on the body at this offset.
+// Hang region (sprite_totoro_petEyeBase[body] + variant) on the body at
+// (sprite_totoro_petEyeOffsetX[body], sprite_totoro_petEyeOffsetY[body]).
 #define SPRITE_TOTORO_PET_BODY_REGION_COUNT 9
 #define SPRITE_TOTORO_PET_EYE_REGION 9
 #define SPRITE_TOTORO_PET_EYE_VARIANTS 5
 // Cells are mirror-symmetric about the eye centre, so this holds when flipped.
 #define SPRITE_TOTORO_PET_EYE_OFFSET_X 22
+
+// Every pose wears the same strip; the tables exist so the scene can drive
+// this sheet and the adult one (which does vary per pose) the same way.
+static const uint8_t sprite_totoro_petEyeBase[9] PROGMEM = {
+  9, 9, 9, 9, 9, 9, 9, 9, 9
+};
+
+static const uint8_t sprite_totoro_petEyeOffsetX[9] PROGMEM = {
+  22, 22, 22, 22, 22, 22, 22, 22, 22
+};
 
 static const uint8_t sprite_totoro_petEyeOffsetY[9] PROGMEM = {
   32, 30, 36, 34, 36, 34, 32, 34, 36

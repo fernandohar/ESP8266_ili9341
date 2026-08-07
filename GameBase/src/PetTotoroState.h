@@ -18,7 +18,11 @@
 // There are two stages, because each one costs a full sprite sheet to draw.
 // Only careXP is persisted, so this threshold can be retuned freely - a save
 // from an older build re-derives its stage from the XP it already had.
-#define PET_STAGE_ADULT_XP 500
+//
+// 150 is roughly ten game wins or fifteen baths, so the pet grows up within a
+// session or two rather than making the adult art something most players never
+// see.
+#define PET_STAGE_ADULT_XP 150
 
 enum PetLifeState {
   PET_LIFE_ALIVE = 0,
