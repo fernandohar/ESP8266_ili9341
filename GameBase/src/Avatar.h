@@ -242,11 +242,6 @@ class Avatar {
         return false;
       }
 
-      const uint8_t *mask = getMask();
-      if (mask == NULL) {
-        return true;
-      }
-
       uint16_t localX = targetX - (uint16_t)this->x;
       uint16_t localY = targetY - (uint16_t)this->y;
       uint16_t srcCol = flipX ? (this->width - 1 - localX) : localX;
@@ -263,6 +258,13 @@ class Avatar {
 
       if (spriteAsset != NULL) {
         return spriteAssetMaskBit(spriteAsset, srcCol, localY) != 0;
+      }
+
+      // Only plain-bitmap avatars reach here; without a mask the whole box is
+      // treated as opaque.
+      const uint8_t *mask = getMask();
+      if (mask == NULL) {
+        return true;
       }
 
       uint16_t bytesPerRow = (this->width + 7) / 8;

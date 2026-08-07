@@ -341,7 +341,8 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
   uint16_t maskoffset = 0;
   uint8_t maskByte = 0;
 
-  if (srcStartX == 0 && avatar->x < 0) {
+  bool clippedLeft = (srcStartX == 0 && avatar->x < 0);
+  if (clippedLeft) {
     renderwidth = (avatar->width + avatar->x);
     if (renderwidth > maxWidth) {
       renderwidth = maxWidth;
@@ -349,24 +350,30 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
     if (renderwidth == 0) {
       return;
     }
-
-    maskRead = false;
     bitmapoffset = (uint16_t)abs(avatar->x);
-    if (avatar->getSpriteAsset() != NULL) {
-      for (uint16_t x = 0; x < renderwidth; x++) {
-        uint16_t localX = x + bitmapoffset;
-        uint16_t srcCol = avatar->flipX ? (avatar->width - 1 - localX) : localX;
-        if (avatarLocalMaskBit(avatar, srcCol, y)) {
-          *destPtr++ = avatarLocalPixelRgb565(avatar, srcCol, y);
-        } else {
-          destPtr++;
-        }
+  }
+
+  // Asset-backed avatars carry their pixels/mask in the SpriteAsset, so
+  // getMask() is NULL for them: they must be sampled per pixel before any of
+  // the flat-mask prefetching below dereferences that NULL.
+  if (avatar->getSpriteAsset() != NULL) {
+    for (uint16_t x = 0; x < renderwidth; x++) {
+      uint16_t localX = x + bitmapoffset;
+      uint16_t srcCol = avatar->flipX ? (avatar->width - 1 - localX) : localX;
+      if (avatarLocalMaskBit(avatar, srcCol, y)) {
+        *destPtr++ = avatarLocalPixelRgb565(avatar, srcCol, y);
+      } else {
+        destPtr++;
       }
-      return;
     }
+    return;
+  }
+
+  if (clippedLeft) {
+    maskRead = false;
     const uint8_t* mask = avatar->getMask();
     maskByte = pgm_read_byte(&(mask[bw * y + bitmapoffset / 8]));
-    maskoffset = (uint16_t)abs(avatar->x) % 8;
+    maskoffset = bitmapoffset % 8;
     maskByte <<= maskoffset;
   } else if (srcStartX > 0) {
     maskRead = false;
@@ -381,18 +388,6 @@ void GameScene::drawAvatar2Buffer(Avatar *avatar, uint16_t* destPtr, uint16_t y,
       uint16_t srcCol = avatar->width - 1 - (x + bitmapoffset);
       if (avatarLocalMaskBit(avatar, srcCol, y)) {
         *destPtr++ = avatarLocalPixelRgb565(avatar, srcCol, y);
-      } else {
-        destPtr++;
-      }
-    }
-    return;
-  }
-
-  if (avatar->getSpriteAsset() != NULL) {
-    for (uint16_t x = 0; x < renderwidth; x++) {
-      uint16_t localX = x + bitmapoffset;
-      if (avatarLocalMaskBit(avatar, localX, y)) {
-        *destPtr++ = avatarLocalPixelRgb565(avatar, localX, y);
       } else {
         destPtr++;
       }

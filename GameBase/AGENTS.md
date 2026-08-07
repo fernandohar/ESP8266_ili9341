@@ -148,6 +148,7 @@ handling:
 
 | Script | Input → Output | What it adds |
 |--------|----------------|--------------|
+| `generate_totoro_pet_sheet.py` | `assets/totoro_parts_source.png` → `src/sprite_totoro_pet.h` | The source is a *worksheet*: 7 blank-faced bodies on the top row, 5 detachable eye/mouth strips below, then the artist's combined reference. Keeps bodies and faces as **separate cells** (7 + 5) and lets the scene hang the face on the body as an `Attachment`, so a new expression costs one small cell instead of a whole extra set of poses. Bodies are bottom-aligned in the cell (feet on the ground line) and centred on the **eye centre**, which makes every cell mirror-symmetric so the walk-right animation is just `setFlipX(true)`. Also emits `..._EYE_REGION`, `..._EYE_OFFSET_X` and an `EyeOffsetY[]` table that the scene uses to place the face per pose. See "Totoro pet poses & faces" below. |
 | `generate_soot_sheet.py` | `assets/soot_source.png` → `src/sprite_soot.h` | Finds sprite blobs and packs them into uniform 16px cells. |
 | `generate_soot_mole_sheet.py` | `assets/soot_mole_source.png` → `src/sprite_soot_mole.h` | Like `generate_soot_sheet.py` but the source has no real alpha and its blobs touch/overlap, so it labels connected regions, filters for plausible single-creature bbox size/aspect, and isolates each blob's own pixels (keeping enclosed eye-whites) before packing into 44px cells. Used for the Whack-a-Mole "mole". |
 | `generate_grass_tile.py` | `assets/tictactoe_bg_elements_source.png` → `src/image_grass_tile.h` | Crops a clean 50x50 grass patch and makes it seamless (offset+feather) for use as a *repeating* background tile - far smaller than a full-screen image. See "tiled backgrounds" below. |
@@ -171,6 +172,28 @@ handling:
 
 > Prefer regenerating an asset from a source PNG over hand-editing the generated
 > header. Never hand-edit the large PROGMEM arrays.
+
+### Totoro pet poses & faces
+
+The home pet (`Scene_PetTotoro`) draws two avatars: the body, and an
+`Attachment` holding the eye/mouth strip. What each body means:
+
+| Region | Body | Used when |
+|--------|------|-----------|
+| `stand` | pose 1, head-on | idle |
+| `dance` | pose 2, arms out | idle, occasionally; sways by mirroring in place every `PET_DANCE_FRAME_MS` |
+| `hungry` | pose 3, clutching its belly | hunger < `PET_HUNGRY_POSE_THRESHOLD` (30) |
+| `sit` | pose 4, head-on | idle; also while eating and while sick |
+| `walk_a` / `walk_b` | poses 5-6, **facing left** | wandering; mirrored to walk right |
+| `sit_side` | pose 7, facing left | idle, as a variant of `sit` |
+| `sleep` / `blink` | aliases of `sit` / `stand` | nothing — legacy slots that keep region indices 0-5 interchangeable with the junior/adult sheets |
+
+The face is chosen by happiness alone (`eyeVariantForHappiness`), in
+lower-inclusive bands: `<20` eye 4 (unhappy), `20-39` eye 1 (content),
+`40-59` eye 3 (neutral), `60-79` eye 5 (smiling), `>=80` eye 2 (laughing).
+
+To add an expression, add a box to `EYE_BOXES` in the generator and rerun it;
+the region and offset tables regenerate themselves.
 
 ### Tiled (repeating) backgrounds — save flash
 
