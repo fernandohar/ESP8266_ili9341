@@ -1006,13 +1006,14 @@ class Scene_PetTotoro : public GameScene {
 
     // ---- Play sub-menu (game picker) ---------------------------------------
 
-    static const int PET_PLAY_GAME_COUNT = 3;
+    static const int PET_PLAY_GAME_COUNT = 4;
 
     const char *playGameLabel(int i) {
       switch (i) {
         case 0: return "Acorn Catch";
         case 1: return "Tic-Tac-Toe";
         case 2: return "Whack-a-Mole";
+        case 3: return "Cat Bus Cross";
       }
       return "";
     }
@@ -1022,6 +1023,7 @@ class Scene_PetTotoro : public GameScene {
         case 0: return SCENE_ACORN_CATCH;
         case 1: return SCENE_TIC_TAC_TOE;
         case 2: return SCENE_WHACK_A_MOLE;
+        case 3: return SCENE_CAT_BUS_CROSS;
       }
       return SCENE_PET_TOTORO;
     }
@@ -1031,6 +1033,7 @@ class Scene_PetTotoro : public GameScene {
         case 0: return rgb565(200, 150, 70);
         case 1: return rgb565(90, 160, 200);
         case 2: return rgb565(150, 120, 200);
+        case 3: return rgb565(220, 120, 80);
       }
       return rgb565(120, 120, 120);
     }
@@ -1038,15 +1041,15 @@ class Scene_PetTotoro : public GameScene {
     void playButtonRect(int i, int16_t *x, int16_t *y, int16_t *w, int16_t *h) {
       *x = 40;
       *w = SCREENWIDTH - 80;
-      *h = 40;
-      *y = 116 + i * (*h + 12);
+      *h = 34;
+      *y = 98 + i * (*h + 8);
     }
 
     void backButtonRect(int16_t *x, int16_t *y, int16_t *w, int16_t *h) {
       *w = 120;
       *h = 34;
       *x = (SCREENWIDTH - *w) / 2;
-      *y = 262;
+      *y = 278;
     }
 
     void drawPlayMenu() {

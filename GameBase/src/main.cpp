@@ -20,6 +20,7 @@
 #include "Scene_WhackAMole.h"
 #include "Scene_Status.h"
 #include "Scene_Grocery.h"
+#include "Scene_CatBusCross.h"
 #include "TouchCalibration.h"
 #include "PetSave.h"
 #include "PetClock.h"
@@ -198,6 +199,7 @@ void setup() {
   manager->appendScene(new Scene_WhackAMole(tft));          // 4 - Whack-a-Mole
   manager->appendScene(new Scene_Status(tft));              // 5 - Status
   manager->appendScene(new Scene_Grocery(tft));             // 6 - Grocery (Eat)
+  manager->appendScene(new Scene_CatBusCross(tft));         // 7 - Cat Bus Cross
 
   manager->startScene(SCENE_PET_TOTORO);
 
