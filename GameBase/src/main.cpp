@@ -27,6 +27,10 @@
 #include "PetClock.h"
 #include "PetSim.h"
 
+#if defined(TINYML_DATA_LOG)
+#include "ml/MLDataLogger.h"
+#endif
+
 #if defined(ARDUINO_ARCH_ESP32)
 #define TOUCH_IRQ 21
 #else
@@ -119,6 +123,10 @@ bool isTouching() {
 void setup() {
   Serial.begin(115200);
   Serial.println("Start up");
+#if defined(TINYML_DATA_LOG)
+  MLDataLogger::printCsvHeader();
+  Serial.println("TinyML data logging enabled (TINYML_DATA_LOG)");
+#endif
 
 #if defined(WOKWI_CAP_TOUCH)
   Wire.begin();
