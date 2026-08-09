@@ -90,6 +90,17 @@
 // Generous padding around the sprite so small stages are still easy to tap.
 #define PET_TAP_PADDING 12
 
+// --- Picking Totoro up and dragging it around ---
+// A press on the pet is only a drag once the finger has travelled this far;
+// anything shorter is still a tap and opens the radial menu on release.
+#define PET_DRAG_THRESHOLD 6
+// How high it can be lifted, and how fast it drops back when let go mid-air.
+#define PET_DRAG_MIN_Y 60
+#define PET_DROP_SPEED 7.0f
+// The resistive panel drops a reading now and then; ignore this many empty
+// ticks before deciding the finger really left the glass.
+#define PET_DRAG_RELEASE_TICKS 2
+
 // --- Free / in-place care actions ---
 #define PET_PET_HAPPINESS 6
 #define PET_PET_MAX_SESSION 3
@@ -217,31 +228,56 @@ class Scene_PetTotoro : public GameScene {
       }
 
       tickStats(now);
-      updatePose(now);
+      if (!dragging && !dropping) {
+        updatePose(now);  // a held or falling Totoro keeps the pose it has
+      }
       updateSoot(now);
       refillPetSession(now);
 
+      uint16_t touchX = 0;
+      uint16_t touchY = 0;
+      bool havePoint = isTouching && getTouchPoint(_tft, &touchX, &touchY);
       if (isTouching && !wasTouching) {
-        uint16_t touchX = 0;
-        uint16_t touchY = 0;
-        if (getTouchPoint(_tft, &touchX, &touchY)) {
+        if (havePoint) {
           if (tryCleanSoot(touchX, touchY)) {
             wasTouching = isTouching;
             requestRender();
             return;
           }
           if (tapOnPet(touchX, touchY)) {
-            openMenu();
-            wasTouching = isTouching;
-            return;
+            beginPress(touchX, touchY);
           }
         }
+      } else if (petPressed && havePoint) {
+        updateDrag(touchX, touchY);
+      } else if (petPressed && !isTouching) {
+        if (dragging && dragReleaseTicks < PET_DRAG_RELEASE_TICKS) {
+          dragReleaseTicks++;
+        } else if (releasePress(now)) {
+          openMenu();  // pressed and let go without moving: still a tap
+          wasTouching = isTouching;
+          return;
+        }
+      }
+
+      if (dragging) {
+        // Totoro is in hand: it does not walk, and the face rides along.
+        updateFace(pets[0]);
+        if (eyeAttach != NULL) {
+          eyeAttach->updatePos(now);
+        }
+        wasTouching = isTouching;
+        requestRender();
+        return;
       }
 
       Pet &pet = pets[0];
       if (pet.avatar != NULL) {
         pet.avatar->updatePos(now);
         clampPet(pet);
+        if (dropping) {
+          settleDrop(pet, now);
+        }
       }
       updateFace(pet);  // mood may have shifted this tick
       if (eyeAttach != NULL) {
@@ -262,6 +298,9 @@ class Scene_PetTotoro : public GameScene {
       if (PetTotoroState::isSick()) {
         drawSickBanner();
       }
+      if (dragging && speechUntilMs != 0) {
+        drawSpeechBubble();  // the pet can be carried across the bubble
+      }
     }
 
     void initScene() {
@@ -272,6 +311,10 @@ class Scene_PetTotoro : public GameScene {
       eyeAttach = NULL;
       menuOpen = false;
       playOpen = false;
+      petPressed = false;
+      dragging = false;
+      dropping = false;
+      dragReleaseTicks = 0;
       petSession = PET_PET_MAX_SESSION;
       petCooldownUntilMs = 0;
       rewardToastUntilMs = 0;
@@ -334,6 +377,9 @@ class Scene_PetTotoro : public GameScene {
 
     void destroyScene() {
       pets[0].avatar = NULL;
+      petPressed = false;
+      dragging = false;
+      dropping = false;
       for (int i = 0; i < MAX_SOOT; i++) {
         sootSlots[i].avatar = NULL;
         sootSlots[i].active = false;
@@ -390,6 +436,18 @@ class Scene_PetTotoro : public GameScene {
     bool playOpen = false;
     int petSession = PET_PET_MAX_SESSION;
     unsigned long petCooldownUntilMs = 0;
+
+    // Drag state. A press on the pet starts as an undecided "petPressed" and
+    // only becomes a drag once the finger travels; dropping covers the fall
+    // back to the ground after being released in mid-air.
+    bool petPressed = false;
+    bool dragging = false;
+    bool dropping = false;
+    uint8_t dragReleaseTicks = 0;
+    int16_t pressStartX = 0;
+    int16_t pressStartY = 0;
+    int16_t grabOffsetX = 0;  // pet position minus touch position at grab time
+    int16_t grabOffsetY = 0;
 
     // Eating animation state (a food bought in the grocery is attached to the
     // Totoro avatar and chewed through 3 frames before its effect is applied).
@@ -946,6 +1004,128 @@ class Scene_PetTotoro : public GameScene {
       requestRender();
     }
 
+    // ---- Picking Totoro up --------------------------------------------------
+
+    // Where the current sprite's feet rest. Poses differ in height, so this is
+    // read off the avatar rather than cached.
+    float petGroundY(const Pet &p) const {
+      return (float)PET_GROUND_Y - (float)p.avatar->height;
+    }
+
+    // Back to wandering (or to sitting, if the pet is too sick to).
+    void restPose(Pet &p, unsigned long now) {
+      if (PetTotoroState::isSick()) {
+        p.pose = TOTORO_POSE_SIT;
+        setMirrored(p, false);
+        applyPoseFrame(p, TOTORO_RGN_SIT);
+        return;
+      }
+      chooseNewPose(p, now);
+    }
+
+    void beginPress(uint16_t touchX, uint16_t touchY) {
+      Avatar *a = pets[0].avatar;
+      if (a == NULL) {
+        return;
+      }
+      petPressed = true;
+      dragging = false;
+      dragReleaseTicks = 0;
+      pressStartX = (int16_t)touchX;
+      pressStartY = (int16_t)touchY;
+      grabOffsetX = (int16_t)a->x - (int16_t)touchX;
+      grabOffsetY = (int16_t)a->y - (int16_t)touchY;
+    }
+
+    void startDrag() {
+      Pet &p = pets[0];
+      dragging = true;
+      dropping = false;
+      p.avatar->setVelocity(0, 0);
+      // Held up with its arms out, and it keeps that pose until it is let go.
+      p.pose = TOTORO_POSE_DANCE;
+      setMirrored(p, false);
+      applyPoseFrame(p, p.hasEyes ? TOTORO_RGN_DANCE : TOTORO_RGN_STAND);
+      addSound(NOTE_G4, noteDurationMs(20, 800));
+    }
+
+    void updateDrag(uint16_t touchX, uint16_t touchY) {
+      Avatar *a = pets[0].avatar;
+      if (a == NULL) {
+        return;
+      }
+      dragReleaseTicks = 0;
+      if (!dragging) {
+        int16_t dx = (int16_t)touchX - pressStartX;
+        int16_t dy = (int16_t)touchY - pressStartY;
+        if (abs(dx) < PET_DRAG_THRESHOLD && abs(dy) < PET_DRAG_THRESHOLD) {
+          return;  // hasn't moved enough yet - could still be a tap
+        }
+        startDrag();
+      }
+
+      // The pet keeps the spot on its body that was grabbed under the finger.
+      float nx = (float)((int16_t)touchX + grabOffsetX);
+      float ny = (float)((int16_t)touchY + grabOffsetY);
+      float maxX = (float)PET_WALK_MAX_X - a->width;
+      if (nx < PET_WALK_MIN_X) nx = PET_WALK_MIN_X;
+      if (nx > maxX) nx = maxX;
+      float ground = petGroundY(pets[0]);
+      if (ny < PET_DRAG_MIN_Y) ny = PET_DRAG_MIN_Y;
+      if (ny > ground) ny = ground;
+      a->setPos(nx, ny);
+    }
+
+    // Finger lifted. Returns true when the press never turned into a drag, so
+    // the caller can treat it as a tap.
+    bool releasePress(unsigned long now) {
+      petPressed = false;
+      dragReleaseTicks = 0;
+      if (!dragging) {
+        return true;
+      }
+      dragging = false;
+
+      Pet &p = pets[0];
+      if (p.avatar == NULL) {
+        return false;
+      }
+      if (p.avatar->y < petGroundY(p)) {
+        dropping = true;  // let go in mid-air: fall back to the floor
+        p.avatar->setVelocity(0, PET_DROP_SPEED);
+      } else {
+        p.avatar->setVelocity(0, 0);
+        restPose(p, now);
+      }
+      return false;
+    }
+
+    void settleDrop(Pet &p, unsigned long now) {
+      float ground = petGroundY(p);
+      if (p.avatar->y < ground) {
+        return;
+      }
+      p.avatar->setPos(p.avatar->x, ground);
+      p.avatar->setVelocity(0, 0);
+      dropping = false;
+      addSound(NOTE_C4, noteDurationMs(24, 700));  // a soft landing thud
+      restPose(p, now);
+    }
+
+    // Put the pet back down wherever it is: used when an overlay takes over
+    // mid-drag, so it never stays frozen in the air.
+    void cancelDrag() {
+      petPressed = false;
+      dragging = false;
+      dropping = false;
+      dragReleaseTicks = 0;
+      Pet &p = pets[0];
+      if (p.avatar != NULL) {
+        p.avatar->setVelocity(0, 0);
+        p.avatar->setPos(p.avatar->x, petGroundY(p));
+      }
+    }
+
     // ---- Radial action menu -------------------------------------------------
 
     bool tapOnPet(uint16_t x, uint16_t y) {
@@ -1049,9 +1229,7 @@ class Scene_PetTotoro : public GameScene {
     void openMenu() {
       menuOpen = true;
       playOpen = false;
-      if (pets[0].avatar != NULL) {
-        pets[0].avatar->setVelocity(0, 0);
-      }
+      cancelDrag();  // the menu is modal, so never leave the pet hanging mid-air
       repaintRoom();
       drawMenu();
       addSound(NOTE_C5, noteDurationMs(24, 900));
