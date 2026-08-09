@@ -6,6 +6,7 @@
 #include "GameSceneIds.h"
 #include "GameResult.h"
 #include "Input.h"
+#include "ml/MLGameHooks.h"
 #include "SpriteSheet.h"
 #include "SpriteText.h"
 #include "TouchInput.h"
@@ -199,6 +200,7 @@ class Scene_CatBusCross : public GameScene {
     unsigned long lastHopMs = 0;
     unsigned long suppressInputUntilMs = 0;
     unsigned long hitUntilMs = 0;
+    unsigned long roundStartMs = 0;
     boolean wasTouching = false;
 
     SpriteSheet meiSheet() const {
@@ -428,6 +430,7 @@ class Scene_CatBusCross : public GameScene {
     void beginPlay(unsigned long now) {
       (void)now;
       state = CBC_STATE_PLAYING;
+      roundStartMs = millis();
       hideBanner();
       addSound(NOTE_C5, noteDurationMs(8, 800));
       addSound(NOTE_E5, noteDurationMs(16, 800));
@@ -467,6 +470,8 @@ class Scene_CatBusCross : public GameScene {
       state = CBC_STATE_WON;
       int reward = 4 + attemptsLeft * 2;
       GameResult::report(GAME_RESULT_WIN, reward);
+      mlLogGameEnd(SCENE_CAT_BUS_CROSS, GAME_RESULT_WIN, dodged, attemptsLeft,
+                   (uint16_t)((millis() - roundStartMs) / 1000));
       addSound(NOTE_C5, noteDurationMs(8, 800));
       addSound(NOTE_E5, noteDurationMs(8, 800));
       addSound(NOTE_G5, noteDurationMs(8, 800));
@@ -477,6 +482,8 @@ class Scene_CatBusCross : public GameScene {
     void loseRound() {
       state = CBC_STATE_LOST;
       GameResult::report(GAME_RESULT_LOSS, 0);
+      mlLogGameEnd(SCENE_CAT_BUS_CROSS, GAME_RESULT_LOSS, dodged, 0,
+                   (uint16_t)((millis() - roundStartMs) / 1000));
       addSound(NOTE_A3, noteDurationMs(4, 600));
       resetPlayer();
       showBanner("OVER");

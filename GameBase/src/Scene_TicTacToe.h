@@ -6,6 +6,7 @@
 #include "GameSceneIds.h"
 #include "GameResult.h"
 #include "Input.h"
+#include "ml/MLGameHooks.h"
 #include "SpriteSheet.h"
 #include "TouchInput.h"
 #include "image_grass_tile.h"
@@ -176,6 +177,7 @@ class Scene_TicTacToe : public GameScene {
     int8_t currentMark = TTT_X;
     boolean wasTouching = false;
     unsigned long suppressTouchUntilMs = 0;
+    unsigned long gameStartMs = 0;
 
     uint16_t colorWood() const { return rgb565(150, 105, 55); }
     uint16_t colorWoodDark() const { return rgb565(92, 62, 30); }
@@ -248,6 +250,7 @@ class Scene_TicTacToe : public GameScene {
       winningLineCount = 0;
       currentMark = TTT_X;
       state = TTT_STATE_PLAYING;
+      gameStartMs = millis();
 
       grid->setPos(TTT_BOARD_X, TTT_BOARD_Y);
       grid->requestRedraw();
@@ -406,6 +409,23 @@ class Scene_TicTacToe : public GameScene {
       return open[random(0, openCount)];
     }
 
+    int boardMoveCount() const {
+      int count = 0;
+      for (int i = 0; i < 9; i++) {
+        if (board[i] != TTT_EMPTY) {
+          count++;
+        }
+      }
+      return count;
+    }
+
+    uint16_t gameSessionSeconds() const {
+      if (gameStartMs == 0) {
+        return 0;
+      }
+      return (uint16_t)((millis() - gameStartMs) / 1000);
+    }
+
     void endGame(int winner) {
       // Flush the final placed token(s) before we stop calling renderScene().
       renderScene();
@@ -420,8 +440,9 @@ class Scene_TicTacToe : public GameScene {
       // Reward the pet: in 1P the human is X (win iff X wins); in 2P any decisive
       // result counts as a win for the play session.
       bool playerWon = (numPlayers != 1) || (winner == TTT_X);
-      GameResult::report(playerWon ? GAME_RESULT_WIN : GAME_RESULT_LOSS,
-                         playerWon ? TTT_WIN_COINS : 0);
+      GameOutcome outcome = playerWon ? GAME_RESULT_WIN : GAME_RESULT_LOSS;
+      GameResult::report(outcome, playerWon ? TTT_WIN_COINS : 0);
+      mlLogGameEnd(SCENE_TIC_TAC_TOE, outcome, boardMoveCount(), numPlayers, gameSessionSeconds());
       drawResult(msg);
       addSound(NOTE_G5, noteDurationMs(8, 800));
       addSound(NOTE_C6, noteDurationMs(8, 800));
@@ -432,6 +453,7 @@ class Scene_TicTacToe : public GameScene {
       renderScene();
       state = TTT_STATE_DRAW;
       GameResult::report(GAME_RESULT_LOSS, 0);  // consolation reward for a draw
+      mlLogGameEnd(SCENE_TIC_TAC_TOE, GAME_RESULT_LOSS, boardMoveCount(), numPlayers, gameSessionSeconds());
       drawResult("DRAW");
       addSound(NOTE_E4, noteDurationMs(8, 700));
       addSound(NOTE_E4, noteDurationMs(8, 700));

@@ -6,6 +6,7 @@
 #include "GameSceneIds.h"
 #include "GameResult.h"
 #include "Input.h"
+#include "ml/MLGameHooks.h"
 #include "SpriteSheet.h"
 #include "SpriteText.h"
 #include "TouchInput.h"
@@ -315,8 +316,12 @@ class Scene_WhackAMole : public GameScene {
           reward = 1;
         }
         GameResult::report(GAME_RESULT_WIN, reward);
+        mlLogGameEnd(SCENE_WHACK_A_MOLE, GAME_RESULT_WIN, score, level,
+                     (uint16_t)((millis() - stateStartMs) / 1000));
       } else {
         GameResult::report(GAME_RESULT_LOSS, 0);
+        mlLogGameEnd(SCENE_WHACK_A_MOLE, GAME_RESULT_LOSS, score, level,
+                     (uint16_t)((millis() - stateStartMs) / 1000));
       }
 
       showBanner("TIME UP", 130);

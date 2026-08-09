@@ -38,7 +38,7 @@ pio device monitor -b 115200
 Play games; lines prefixed with `ML,` are CSV rows. Capture to file:
 
 ```bash
-pio device monitor -b 115200 | grep '^ML,' > data/raw/sessions.csv
+pio device monitor -b 115200 | python download_serial.py > data/raw/sessions.csv
 ```
 
 Retrain on real data:
