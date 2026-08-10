@@ -7,6 +7,13 @@
 uint8_t MLDataLogger::sessionGames = 0;
 
 #if defined(TINYML_DATA_LOG)
+static int s_lastGameId = 0;
+static GameOutcome s_lastOutcome = GAME_RESULT_NONE;
+static int s_lastScore = 0;
+static int s_lastDifficulty = 0;
+static uint16_t s_lastSessionSec = 0;
+static bool s_hasLastGame = false;
+
 static void logEvent(GameplayEventKind kind, int gameId, GameOutcome outcome,
                      int score, int difficulty, uint16_t sessionSeconds) {
   GameplaySample sample = MLDataLogger::buildSample(gameId, outcome);
@@ -31,11 +38,11 @@ static void logEvent(GameplayEventKind kind, int gameId, GameOutcome outcome,
   Serial.print(F(","));
   Serial.print(sample.happinessNorm, 3);
   Serial.print(F(","));
-  Serial.print(sample.healthNorm, 3);
+  Serial.print(sample.excitementNorm, 3);
   Serial.print(F(","));
   Serial.print(sample.cleanNorm, 3);
   Serial.print(F(","));
-  Serial.print(sample.isSick, 0);
+  Serial.print(sample.isUnhappy, 0);
   Serial.print(F(","));
   Serial.print(sample.lastGameIdNorm, 3);
   Serial.print(F(","));
@@ -50,22 +57,40 @@ static void logEvent(GameplayEventKind kind, int gameId, GameOutcome outcome,
 void MLDataLogger::printCsvHeader() {
 #if defined(TINYML_DATA_LOG)
   Serial.println(F("ML,ms,event,game_id,outcome,score,difficulty,session_sec,"
-                   "hunger,happy,health,clean,sick,game_id_norm,win,session_games,label"));
+                   "hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label"));
 #endif
 }
 
 void MLDataLogger::resetSession() {
   sessionGames = 0;
+#if defined(TINYML_DATA_LOG)
+  s_hasLastGame = false;
+#endif
 }
 
 void MLDataLogger::onHubVisit() {
 #if defined(TINYML_DATA_LOG)
-  logEvent(GAMEPLAY_EVENT_HUB_VISIT, SCENE_PET_TOTORO, GAME_RESULT_NONE, 0, 0, 0);
+  // Returning home after a game: pet stats are post-reward (applyGameReward ran
+  // first) but we still need the finished round's id/score/outcome here — not
+  // zeros. Game-end rows logged in the mini-game scene carry pre-reward stats.
+  if (s_hasLastGame) {
+    logEvent(GAMEPLAY_EVENT_HUB_VISIT, s_lastGameId, s_lastOutcome, s_lastScore,
+             s_lastDifficulty, s_lastSessionSec);
+  } else {
+    logEvent(GAMEPLAY_EVENT_HUB_VISIT, SCENE_PET_TOTORO, GAME_RESULT_NONE, 0, 0, 0);
+  }
 #endif
 }
 
 void MLDataLogger::onGameEnd(int gameId, GameOutcome outcome, int score, int difficulty, uint16_t sessionSeconds) {
 #if defined(TINYML_DATA_LOG)
+  s_lastGameId = gameId;
+  s_lastOutcome = outcome;
+  s_lastScore = score;
+  s_lastDifficulty = difficulty;
+  s_lastSessionSec = sessionSeconds;
+  s_hasLastGame = true;
+
   sessionGames++;
   logEvent(GAMEPLAY_EVENT_GAME_END, gameId, outcome, score, difficulty, sessionSeconds);
 #else
@@ -82,9 +107,9 @@ GameplaySample MLDataLogger::buildSample(int gameId, GameOutcome outcome) {
   GameplaySample sample = {};
   sample.hungerNorm = s.hunger / 100.0f;
   sample.happinessNorm = s.happiness / 100.0f;
-  sample.healthNorm = s.health / 100.0f;
+  sample.excitementNorm = s.excitement / 100.0f;
   sample.cleanNorm = s.cleanness / 100.0f;
-  sample.isSick = PetTotoroState::isSick() ? 1.0f : 0.0f;
+  sample.isUnhappy = PetTotoroState::isSick() ? 1.0f : 0.0f;
   sample.lastGameIdNorm = gameId / 7.0f;
   sample.lastOutcomeWin = (outcome == GAME_RESULT_WIN) ? 1.0f : 0.0f;
   float capped = sessionGames > 10 ? 10.0f : (float)sessionGames;

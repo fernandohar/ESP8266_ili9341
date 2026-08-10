@@ -6,24 +6,27 @@
 
 // Rule-based teacher for auto-labeling training data and as an inference fallback
 // when the model is disabled or confidence is low.
+//
+// Immediate needs (0..100 scale):
+//   Bathe — cleanness low.
+//   Eat   — hunger low.
+//   Play / Pet — happiness low; play if excitement is low, else pet.
 class CareActionRules {
   public:
     static CareAction suggest(const GameplaySample &sample) {
+      (void)sample;
       const PetTotoroStats &s = PetTotoroState::stats();
 
-      if (PetTotoroState::isSick() || s.health < 25) {
-        return CARE_ACTION_BATH;  // bath boosts health in pet sim
+      if (s.cleanness < 25) {
+        return CARE_ACTION_BATH;
       }
       if (s.hunger < 30) {
         return CARE_ACTION_EAT;
       }
-      if (s.cleanness < 25) {
-        return CARE_ACTION_BATH;
-      }
       if (s.happiness < 35) {
-        return CARE_ACTION_PET;
-      }
-      if (sample.lastOutcomeWin < 0.5f && sample.sessionGamesNorm > 0.3f) {
+        if (s.excitement < 10) {
+          return CARE_ACTION_PLAY;
+        }
         return CARE_ACTION_PET;
       }
       return CARE_ACTION_PLAY;

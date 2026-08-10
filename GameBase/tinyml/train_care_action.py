@@ -16,9 +16,9 @@ from sklearn.preprocessing import StandardScaler
 FEATURES = [
     "hunger",
     "happy",
-    "health",
+    "excitement",
     "clean",
-    "sick",
+    "unhappy",
     "game_id_norm",
     "win",
     "session_games",
@@ -30,12 +30,14 @@ def load_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     if "label" not in df.columns:
         raise SystemExit(f"Missing label column in {path}")
-    # Accept ML logger wide format or processed narrow format
     rename = {
         "hungerNorm": "hunger",
         "happinessNorm": "happy",
-        "healthNorm": "health",
+        "excitementNorm": "excitement",
+        "healthNorm": "excitement",
         "cleanNorm": "clean",
+        "isUnhappy": "unhappy",
+        "isSick": "unhappy",
         "lastGameIdNorm": "game_id_norm",
         "lastOutcomeWin": "win",
         "sessionGamesNorm": "session_games",

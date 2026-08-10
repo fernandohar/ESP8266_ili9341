@@ -8,9 +8,9 @@
 struct GameplaySample {
   float hungerNorm;
   float happinessNorm;
-  float healthNorm;
+  float excitementNorm;
   float cleanNorm;
-  float isSick;           // 0 or 1
+  float isUnhappy;        // 0 or 1 (happiness very low)
   float lastGameIdNorm;   // gameId / MAX_GAME_ID
   float lastOutcomeWin;   // 1 = win, 0 = loss/none
   float sessionGamesNorm; // min(sessionGames, cap) / cap

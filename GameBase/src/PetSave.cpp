@@ -4,7 +4,7 @@
 #include "PetClock.h"
 
 // Bumped whenever the stored layout changes so stale/foreign blobs are ignored.
-static const uint16_t PET_SAVE_MAGIC = 0x7002;
+static const uint16_t PET_SAVE_MAGIC = 0x7003;
 
 // Cached real-time bookkeeping. Mirrored to NVS so it survives reboots; kept in
 // RAM too so callers (boot-time catch-up) can read it without reopening NVS.
@@ -39,11 +39,16 @@ bool PetSave::load() {
   }
 
   bool ok = false;
-  if (prefs.getUShort("magic", 0) == PET_SAVE_MAGIC) {
+  const uint16_t magic = prefs.getUShort("magic", 0);
+  if (magic == PET_SAVE_MAGIC || magic == 0x7002) {
     PetTotoroState::setHealth(prefs.getInt("hp", PET_STAT_MAX));
     PetTotoroState::setHunger(prefs.getInt("hu", PET_STAT_MAX));
     PetTotoroState::setHappiness(prefs.getInt("ha", PET_STAT_MAX));
     PetTotoroState::setCleanness(prefs.getInt("cl", PET_STAT_MAX));
+    if (magic == PET_SAVE_MAGIC) {
+      PetTotoroState::setExcitement(prefs.getInt("ex", PET_STAT_MAX));
+      PetTotoroState::setMinutesSinceLastPet(prefs.getUInt("petMin", 0));
+    }
     GameProgress::setCoins(prefs.getInt("coins", 0));
     PetTotoroState::setCareXP(prefs.getUInt("xp", 0));
     PetTotoroState::setLife((PetLifeState)prefs.getUChar("life", PET_LIFE_ALIVE));
@@ -73,6 +78,8 @@ void PetSave::save() {
   prefs.putInt("hu", s.hunger);
   prefs.putInt("ha", s.happiness);
   prefs.putInt("cl", s.cleanness);
+  prefs.putInt("ex", s.excitement);
+  prefs.putUInt("petMin", PetTotoroState::minutesSinceLastPet());
   prefs.putInt("coins", GameProgress::getCoins());
   prefs.putUInt("xp", PetTotoroState::careXP());
   prefs.putUChar("life", (uint8_t)PetTotoroState::life());

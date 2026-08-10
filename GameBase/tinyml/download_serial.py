@@ -12,7 +12,7 @@ import sys
 
 HEADER = (
     "ML,ms,event,game_id,outcome,score,difficulty,session_sec,"
-    "hunger,happy,health,clean,sick,game_id_norm,win,session_games,label"
+    "hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label"
 )
 
 
