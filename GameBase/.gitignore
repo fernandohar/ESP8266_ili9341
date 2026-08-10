@@ -7,3 +7,10 @@ wokwi_firmware.bin
 .vscode/ipch
 __pycache__/
 *.pyc
+
+# TinyML: everything here is installed or produced locally and is reproducible
+# from requirements.txt plus the training scripts. The .gitkeep placeholders are
+# already tracked, so the empty data/ and models/ trees still survive a clone.
+tinyml/.venv/
+tinyml/data/
+tinyml/models/

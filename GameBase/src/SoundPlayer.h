@@ -22,6 +22,8 @@ class SoundPlayer {
     static bool pushNote(int soundTone, int soundDurationMs);
     static bool popNote(SoundNote *note);
     static void servicePlayback();
+    static void startTone(int soundTone);
+    static void stopTone();
 
 #if defined(ARDUINO_ARCH_ESP32)
     static void soundTask(void *param);
@@ -34,6 +36,7 @@ class SoundPlayer {
     static volatile int _queueHead;
     static volatile int _queueTail;
     static bool _playing;
+    static bool _toneActive;
     static unsigned long _stopAtMs;
 
 #if defined(ARDUINO_ARCH_ESP32)

@@ -94,7 +94,6 @@ class GameSceneManager {
     }
 
     void changeScene(unsigned sceneIndex) {
-      Serial.println("changeScene");
       if (_currentSceneIndex >= 0) {
         // Persist coins + pet stats when leaving a scene so progress survives
         // reboots (scene changes are user-paced, so this won't thrash NVS).

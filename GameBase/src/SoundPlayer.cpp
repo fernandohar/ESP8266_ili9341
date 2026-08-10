@@ -3,6 +3,17 @@
 #if defined(ARDUINO_ARCH_ESP32)
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+
+// The ESP32 core's tone()/noTone() forward every note to their own task, which
+// starts a note with ledcAttachPin() -> ledc_get_duty(). That reads back a
+// channel nothing has configured yet, so the IDF driver logs
+// "ledc_get_duty(745): LEDC is not initialized" on the serial port. Claiming one
+// channel here and configuring it in begin() means the peripheral is always
+// initialised before a duty is read or written, and drops a task + queue hop per
+// note.
+static const uint8_t SOUND_LEDC_CHANNEL = 0;
+static const uint8_t SOUND_LEDC_BITS = 10;
+static const uint32_t SOUND_LEDC_IDLE_FREQ = 1000;
 #endif
 
 uint8_t SoundPlayer::_speakerPin = 255;
@@ -12,6 +23,7 @@ volatile int SoundPlayer::_queueCount = 0;
 volatile int SoundPlayer::_queueHead = 0;
 volatile int SoundPlayer::_queueTail = 0;
 bool SoundPlayer::_playing = false;
+bool SoundPlayer::_toneActive = false;
 unsigned long SoundPlayer::_stopAtMs = 0;
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -65,7 +77,27 @@ bool SoundPlayer::popNote(SoundNote *note) {
   return true;
 }
 
+void SoundPlayer::startTone(int soundTone) {
+#if defined(ARDUINO_ARCH_ESP32)
+  ledcWriteTone(SOUND_LEDC_CHANNEL, (uint32_t)soundTone);
+#else
+  tone(_speakerPin, soundTone);
+#endif
+}
+
+void SoundPlayer::stopTone() {
+#if defined(ARDUINO_ARCH_ESP32)
+  ledcWrite(SOUND_LEDC_CHANNEL, 0);
+#else
+  noTone(_speakerPin);
+#endif
+}
+
 void SoundPlayer::servicePlayback() {
+  if (_speakerPin == 255) {
+    return;
+  }
+
   unsigned long now = millis();
 
   if (_playing && now < _stopAtMs) {
@@ -73,7 +105,12 @@ void SoundPlayer::servicePlayback() {
   }
 
   if (_playing) {
-    noTone(_speakerPin);
+    // Rests are queued as tone 0, so only silence the speaker when a note is
+    // really sounding - never stop a tone that was never started.
+    if (_toneActive) {
+      stopTone();
+      _toneActive = false;
+    }
     _playing = false;
   }
 
@@ -85,18 +122,22 @@ void SoundPlayer::servicePlayback() {
   _stopAtMs = now + (unsigned long)note.durationMs;
   _playing = true;
 
-  if (note.tone != 0) {
-    // Let SoundPlayer control note length via noTone(); ESP32's tone(duration)
-    // also blocks its own tone task and can fight this scheduler.
-    tone(_speakerPin, note.tone);
+  if (note.tone > 0) {
+    startTone(note.tone);
+    _toneActive = true;
   }
 }
 
 void SoundPlayer::begin(uint8_t speakerPin) {
   _speakerPin = speakerPin;
   pinMode(_speakerPin, OUTPUT);
+  digitalWrite(_speakerPin, LOW);
 
 #if defined(ARDUINO_ARCH_ESP32)
+  ledcSetup(SOUND_LEDC_CHANNEL, SOUND_LEDC_IDLE_FREQ, SOUND_LEDC_BITS);
+  ledcAttachPin(_speakerPin, SOUND_LEDC_CHANNEL);
+  ledcWrite(SOUND_LEDC_CHANNEL, 0);
+
   if (_taskHandle == NULL) {
     xTaskCreatePinnedToCore(
       soundTask,
