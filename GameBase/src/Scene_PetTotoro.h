@@ -13,7 +13,7 @@
 #include "SpriteSheet.h"
 #include "Attachment.h"
 #include "TouchInput.h"
-#include "image_acorn_catch_bg.h"
+#include "image_pet_totoro_forest_bg.h"
 // Baby and adult are the only stages; a third would cost another full sheet to
 // draw. The retired sprite_totoro_baby.h and sprite_totoro_junior.h are still in
 // src/ - re-adding an include is all it takes to bring either back.
@@ -24,7 +24,7 @@
 
 #define PET_WALK_MIN_X 14
 #define PET_WALK_MAX_X 206
-#define PET_WALK_MIN_Y 212
+#define PET_WALK_MIN_Y 220
 #define PET_WALK_MAX_Y 272
 #define PET_WALK_SPEED 1.4f
 #define MAX_SOOT 8
@@ -70,7 +70,7 @@
 #define PET_HUNGRY_POSE_THRESHOLD 30
 // A single Totoro lives in the room, sized by its current growth stage and
 // bottom-aligned to this ground line.
-#define PET_GROUND_Y 300
+#define PET_GROUND_Y 272
 
 // --- Eating animation (food handed off from the grocery via PendingMeal) ---
 // Totoro sits still and the bought food, attached to it, steps through its
@@ -304,8 +304,8 @@ class Scene_PetTotoro : public GameScene {
     }
 
     void initScene() {
-      setBackgroundAsset(&acorn_catch_bg);
-      drawBackgroundAsset(&acorn_catch_bg);
+      setBackgroundAsset(&pet_totoro_forest_bg);
+      drawBackgroundAsset(&pet_totoro_forest_bg);
 
       pets[0].avatar = NULL;
       eyeAttach = NULL;
