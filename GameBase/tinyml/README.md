@@ -41,6 +41,10 @@ Play games; lines prefixed with `ML,` are CSV rows. Capture to file:
 pio device monitor -b 115200 | python download_serial.py > data/raw/sessions.csv
 ```
 
+For training, prefer **hub rows** (`event=0`) after each round — they have post-play
+pet stats plus the last game's score/outcome. **Game-end rows** (`event=1`) are logged
+inside the mini-game before hunger/clean costs are applied on return home.
+
 Retrain on real data:
 
 ```bash
