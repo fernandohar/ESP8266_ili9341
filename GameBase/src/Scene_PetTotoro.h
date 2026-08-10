@@ -9,6 +9,7 @@
 #include "GameResult.h"
 #include "PendingMeal.h"
 #include "PetSave.h"
+#include "ml/MLGameHooks.h"
 #include "Input.h"
 #include "SpriteSheet.h"
 #include "Attachment.h"
@@ -372,6 +373,7 @@ class Scene_PetTotoro : public GameScene {
       if (rewardToastUntilMs != 0) {
         drawRewardToast();
       }
+      mlLogHubVisit();
       requestRender();
     }
 

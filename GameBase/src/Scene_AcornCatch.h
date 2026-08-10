@@ -7,6 +7,7 @@
 #include "GameProgress.h"
 #include "GameResult.h"
 #include "Input.h"
+#include "ml/MLGameHooks.h"
 #include "Physics.h"
 #include "SpriteSheet.h"
 #include "SpriteText.h"
@@ -472,6 +473,11 @@ class Scene_AcornCatch : public GameScene {
       lastHudLives = -1;
     }
 
+    void logMlGameEnd(GameOutcome outcome) {
+      mlLogGameEnd(SCENE_ACORN_CATCH, outcome, score, (int)mode,
+                   (uint16_t)((millis() - stateStartMs) / 1000));
+    }
+
     SpriteSheet digitSheet() const {
       return SpriteSheet(sprite_digits, sprite_digitsMask, SPRITE_DIGITS_WIDTH, SPRITE_DIGITS_HEIGHT);
     }
@@ -758,6 +764,7 @@ class Scene_AcornCatch : public GameScene {
         coinsEarned = COIN_WIN_MINIMUM;
       }
       GameResult::report(GAME_RESULT_WIN, coinsEarned, secondsLeft);
+      logMlGameEnd(GAME_RESULT_WIN);
 
       updateHudAvatars(millis());
       showResultScreen("YOU WIN", coinsEarned, "COINS");
@@ -773,6 +780,7 @@ class Scene_AcornCatch : public GameScene {
       }
       state = ACORN_STATE_LOST;
       GameResult::report(GAME_RESULT_LOSS, 0, -1);  // pet grants the consolation
+      logMlGameEnd(GAME_RESULT_LOSS);
       freezeGameplay();
       resetHudCache();
       updateHudAvatars(millis());
@@ -795,6 +803,7 @@ class Scene_AcornCatch : public GameScene {
       int playedSec = (int)((millis() - stateStartMs) / 1000);
       coinsEarned = score;
       GameResult::report(GAME_RESULT_WIN, coinsEarned, playedSec);
+      logMlGameEnd(GAME_RESULT_WIN);
 
       updateHudAvatars(millis());
       showResultScreen("TIME UP", coinsEarned, "COINS");
@@ -818,6 +827,7 @@ class Scene_AcornCatch : public GameScene {
       // Still a positive play session, so grant the collected coins + time-based
       // happiness (reported as a "win" so care-XP uses the better tier).
       GameResult::report(GAME_RESULT_WIN, coinsEarned, survivedSec);
+      logMlGameEnd(GAME_RESULT_WIN);
 
       updateHudAvatars(millis());
       showResultScreen("GAME OVER", coinsEarned, "COINS");

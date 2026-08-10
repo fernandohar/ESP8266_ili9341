@@ -100,7 +100,7 @@ Only after you instrument **input rate, retries, session length** and add a quic
 - [x] `GameplaySample` struct  
 - [x] `MLDataLogger` — CSV lines on Serial when `TINYML_DATA_LOG=1`  
 - [x] `CareActionRules` — rule oracle + label name  
-- [ ] Hook logger from mini-game end + pet hub (next PR)  
+- [x] Hook logger from mini-game end + pet hub  
 - [ ] Settings → “Export ML CSV” (optional)
 
 **No neural network yet.**
@@ -181,8 +181,8 @@ Mini-game / Pet hub
 
 ## 8. Next implementation tasks
 
-1. Call `MLDataLogger::logGameEnd(...)` from each mini-game via a thin wrapper.  
-2. Call `MLDataLogger::logHubVisit(...)` when entering `Scene_PetTotoro`.  
+1. ~~Call `MLDataLogger::onGameEnd(...)` from each mini-game via a thin wrapper.~~  
+2. ~~Call `MLDataLogger::onHubVisit(...)` when entering `Scene_PetTotoro`.~~  
 3. Play 20 sessions → `python tinyml/download_serial.py > data/raw/sessions.csv`  
 4. Train → drop `care_action.tflite` into `src/ml/models/`  
 5. Wire `CareActionPredictor` into pet hub UI.
