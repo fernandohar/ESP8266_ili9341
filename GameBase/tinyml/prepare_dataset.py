@@ -58,11 +58,20 @@ def suggest_from_features(row: pd.Series) -> str:
 
 
 def load_serial(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
-    if "ML" in df.columns and "ms" not in df.columns:
-        # First column is the literal prefix "ML" from the logger.
-        df = df.rename(columns={"ML": "ms"})
-    return df
+    text = path.read_text().strip()
+    first_line = text.split("\n", 1)[0]
+    # Captures pasted without a header row start with "ML,<ms>,..."
+    if first_line.startswith("ML,") and not first_line.startswith("ML,ms,"):
+        parts = first_line.split(",")
+        if len(parts) >= 2 and parts[1].isdigit():
+            header = (
+                "ML,ms,event,game_id,outcome,score,difficulty,session_sec,"
+                "hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label"
+            )
+            text = header + "\n" + text
+    from io import StringIO
+
+    return pd.read_csv(StringIO(text))
 
 
 def normalize(df: pd.DataFrame, hub_only: bool) -> pd.DataFrame:
