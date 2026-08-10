@@ -23,8 +23,6 @@ LABELS = ["eat", "play", "pet", "bath"]
 
 
 def suggest(row: dict) -> str:
-    if row["sick"] >= 0.5 or row["health"] < 0.25:
-        return "bath"
     if row["hunger"] < 0.30:
         return "eat"
     if row["clean"] < 0.25:

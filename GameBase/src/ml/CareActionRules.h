@@ -6,14 +6,17 @@
 
 // Rule-based teacher for auto-labeling training data and as an inference fallback
 // when the model is disabled or confidence is low.
+//
+// Care loop (matches pet sim):
+//   - Eat: food restores hunger and may boost happiness (per grocery item).
+//   - Play: mini-games boost happiness but cost hunger and cleanness.
+//   - Bathe: restores cleanness.
+//   - Pet: direct happiness boost when mood is low.
 class CareActionRules {
   public:
     static CareAction suggest(const GameplaySample &sample) {
       const PetTotoroStats &s = PetTotoroState::stats();
 
-      if (PetTotoroState::isSick() || s.health < 25) {
-        return CARE_ACTION_BATH;  // bath boosts health in pet sim
-      }
       if (s.hunger < 30) {
         return CARE_ACTION_EAT;
       }
@@ -23,6 +26,7 @@ class CareActionRules {
       if (s.happiness < 35) {
         return CARE_ACTION_PET;
       }
+      // After a loss in a busy session, comfort before sending back to play.
       if (sample.lastOutcomeWin < 0.5f && sample.sessionGamesNorm > 0.3f) {
         return CARE_ACTION_PET;
       }
