@@ -38,8 +38,8 @@
 #define GROCERY_SLOTS_PER_PAGE 8
 #define GROCERY_BRANCH_ROWS 2
 
-#define GROCERY_BAND_Y 96
-#define GROCERY_BAND_H 152
+#define GROCERY_BAND_Y 116
+#define GROCERY_BAND_H 162
 
 #define GROCERY_FRAME_NEW 0
 #define GROCERY_FRAME_HALF 1
@@ -76,7 +76,7 @@ class Scene_Grocery : public GameScene {
       if (isTouching && !wasTouching && millis() > suppressTouchUntilMs) {
         uint16_t tx = 0, ty = 0;
         if (getTouchPoint(_tft, &tx, &ty)) {
-          if (inRect(tx, ty, PREV_X, NAV_Y, NAV_W, NAV_H)) {
+          if (hasPrevPage() && inRect(tx, ty, PREV_X, NAV_Y, NAV_W, NAV_H)) {
             changePage(-1);
             wasTouching = isTouching;
             return;
@@ -88,7 +88,7 @@ class Scene_Grocery : public GameScene {
             wasTouching = isTouching;
             return;
           }
-          if (inRect(tx, ty, NEXT_X, NAV_Y, NAV_W, NAV_H)) {
+          if (hasNextPage() && inRect(tx, ty, NEXT_X, NAV_Y, NAV_W, NAV_H)) {
             changePage(+1);
             wasTouching = isTouching;
             return;
@@ -140,8 +140,16 @@ class Scene_Grocery : public GameScene {
     }
 
     static int16_t branchTop(int row) {
-      static const int16_t BT[2] = {132, 218};
+      static const int16_t BT[2] = {152, 238};
       return BT[row];
+    }
+
+    bool hasPrevPage() const {
+      return pageOf(selIndex) > 0;
+    }
+
+    bool hasNextPage() const {
+      return pageOf(selIndex) < pageCount() - 1;
     }
 
     static int pageOf(int index) { return index / GROCERY_SLOTS_PER_PAGE; }
@@ -209,6 +217,7 @@ class Scene_Grocery : public GameScene {
         reconstructRegion(0, GROCERY_BAND_Y, SCREENWIDTH, GROCERY_BAND_H);
         drawSelection();
         drawTopBar();
+        drawNavBar();
         return;
       }
 
@@ -220,14 +229,11 @@ class Scene_Grocery : public GameScene {
     void changePage(int delta) {
       int page = pageOf(selIndex);
       int slot = selIndex % GROCERY_SLOTS_PER_PAGE;
-      page += delta;
-      if (page < 0) {
-        page = pageCount() - 1;
+      int newPage = page + delta;
+      if (newPage < 0 || newPage >= pageCount()) {
+        return;
       }
-      if (page >= pageCount()) {
-        page = 0;
-      }
-      selIndex = page * GROCERY_SLOTS_PER_PAGE + slot;
+      selIndex = newPage * GROCERY_SLOTS_PER_PAGE + slot;
       if (selIndex >= GROCERY_FOOD_COUNT) {
         selIndex = GROCERY_FOOD_COUNT - 1;
       }
@@ -235,6 +241,7 @@ class Scene_Grocery : public GameScene {
       reconstructRegion(0, GROCERY_BAND_Y, SCREENWIDTH, GROCERY_BAND_H);
       drawSelection();
       drawTopBar();
+      drawNavBar();
     }
 
     int slotAtPoint(uint16_t tx, uint16_t ty) {
@@ -396,9 +403,43 @@ class Scene_Grocery : public GameScene {
     }
 
     void drawNavBar() {
-      navButton(PREV_X, "Prev", rgb565(70, 90, 120), rgb565(160, 180, 210));
+      // Clear the nav strip back to grass before redraw (hides removed arrows).
+      reconstructRegion(0, NAV_Y - 2, SCREENWIDTH, NAV_H + 4);
       navButton(HOME_X, "Home", rgb565(74, 42, 42), rgb565(210, 150, 150));
-      navButton(NEXT_X, "Next", rgb565(70, 90, 120), rgb565(160, 180, 210));
+      if (hasPrevPage()) {
+        navArrowButton(PREV_X, /*pointRight=*/false);
+      }
+      if (hasNextPage()) {
+        navArrowButton(NEXT_X, /*pointRight=*/true);
+      }
+    }
+
+    // Glossy blue triangle (pixel-art style) for page prev/next.
+    void navArrowButton(int16_t x, bool pointRight) {
+      uint16_t fill = rgb565(70, 90, 120);
+      uint16_t border = rgb565(160, 180, 210);
+      _tft->fillRoundRect(x, NAV_Y, NAV_W, NAV_H, 8, fill);
+      _tft->drawRoundRect(x, NAV_Y, NAV_W, NAV_H, 8, border);
+      drawArrowIcon(x + NAV_W / 2, NAV_Y + NAV_H / 2, pointRight);
+    }
+
+    void drawArrowIcon(int16_t cx, int16_t cy, bool pointRight) {
+      uint16_t outline = rgb565(12, 36, 108);
+      uint16_t body = rgb565(48, 168, 248);
+      uint16_t shine = rgb565(176, 228, 255);
+      uint16_t shade = rgb565(28, 92, 168);
+
+      if (pointRight) {
+        _tft->fillTriangle(cx - 7, cy - 8, cx - 7, cy + 8, cx + 8, cy, outline);
+        _tft->fillTriangle(cx - 6, cy - 7, cx - 6, cy + 7, cx + 6, cy, body);
+        _tft->fillTriangle(cx - 6, cy - 5, cx - 6, cy + 5, cx - 2, cy, shine);
+        _tft->fillTriangle(cx - 5, cy + 1, cx - 5, cy + 6, cx + 4, cy + 1, shade);
+      } else {
+        _tft->fillTriangle(cx + 7, cy - 8, cx + 7, cy + 8, cx - 8, cy, outline);
+        _tft->fillTriangle(cx + 6, cy - 7, cx + 6, cy + 7, cx - 6, cy, body);
+        _tft->fillTriangle(cx + 6, cy - 5, cx + 6, cy + 5, cx + 2, cy, shine);
+        _tft->fillTriangle(cx + 5, cy + 1, cx + 5, cy + 6, cx - 4, cy + 1, shade);
+      }
     }
 
     void navButton(int16_t x, const char *label, uint16_t fill, uint16_t border) {
