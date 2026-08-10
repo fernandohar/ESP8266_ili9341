@@ -116,6 +116,9 @@
 #define GAME_LOSS_HAPPINESS 4
 #define GAME_WIN_CARE_XP 15
 #define GAME_LOSS_CARE_XP 5
+// Every finished mini-game round costs energy and leaves Totoro a little dirty.
+#define GAME_PLAY_HUNGER_COST 8
+#define GAME_PLAY_CLEAN_COST 6
 #define PET_REWARD_TOAST_MS 2200
 
 enum PetMenuItem {
@@ -1533,6 +1536,9 @@ class Scene_PetTotoro : public GameScene {
         addSound(NOTE_E5, noteDurationMs(12, 700));
       }
       PetTotoroState::adjustHappiness(happiness);
+      PetTotoroState::adjustHunger(-GAME_PLAY_HUNGER_COST);
+      PetTotoroState::adjustCleanness(-GAME_PLAY_CLEAN_COST);
+      PetSave::save();
       if (coins > 0) {
         GameProgress::addCoins(coins);
         snprintf(rewardToast, sizeof(rewardToast), "%s +%d coins", label, coins);
