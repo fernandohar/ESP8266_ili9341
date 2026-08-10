@@ -13,21 +13,21 @@ from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-FEATURES = [
-    "hunger",
-    "happy",
-    "excitement",
-    "clean",
-    "unhappy",
-    "game_id_norm",
-    "win",
-    "session_games",
-]
-LABELS = ["eat", "play", "pet", "bath"]
+from prepare_dataset import FEATURES, LABELS, normalize, load_serial
+
+FEATURE_COUNT = len(FEATURES)
 
 
-def load_csv(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
+def load_csv(path: Path, hub_only: bool = True) -> pd.DataFrame:
+    df = load_serial(path)
+
+    # Wide ML logger format (has event/ms columns).
+    if "event" in df.columns or "hunger" in df.columns:
+        if "label" not in df.columns and "hunger" in df.columns:
+            pass
+        return normalize(df, hub_only=hub_only)
+
+    # Already narrow (e.g. synthetic.csv from generate_synthetic.py).
     if "label" not in df.columns:
         raise SystemExit(f"Missing label column in {path}")
     rename = {
@@ -51,10 +51,19 @@ def load_csv(path: Path) -> pd.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=Path, required=True)
+    parser.add_argument("--data", type=Path, required=True, help="Synthetic, prepared, or raw ML CSV")
+    parser.add_argument(
+        "--all-events",
+        action="store_true",
+        help="Include game-end rows (event=1) when loading raw ML captures",
+    )
+    parser.add_argument("--epochs", type=int, default=80)
     args = parser.parse_args()
 
-    df = load_csv(args.data)
+    df = load_csv(args.data, hub_only=not args.all_events)
+    if len(df) < 40:
+        raise SystemExit(f"Need at least ~40 rows; got {len(df)}. Collect more serial data.")
+
     X = df[FEATURES].astype(np.float32).values
     y = df["label"].map({name: i for i, name in enumerate(LABELS)}).values
 
@@ -67,7 +76,7 @@ def main() -> None:
 
     model = tf.keras.Sequential(
         [
-            tf.keras.layers.Input(shape=(len(FEATURES),)),
+            tf.keras.layers.Input(shape=(FEATURE_COUNT,)),
             tf.keras.layers.Dense(16, activation="relu"),
             tf.keras.layers.Dense(8, activation="relu"),
             tf.keras.layers.Dense(len(LABELS), activation="softmax"),
@@ -78,7 +87,14 @@ def main() -> None:
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
-    model.fit(X_train, y_train, epochs=80, batch_size=32, validation_split=0.15, verbose=1)
+    model.fit(
+        X_train,
+        y_train,
+        epochs=args.epochs,
+        batch_size=32,
+        validation_split=0.15,
+        verbose=1,
+    )
 
     preds = np.argmax(model.predict(X_test, verbose=0), axis=1)
     print(classification_report(y_test, preds, target_names=LABELS))
