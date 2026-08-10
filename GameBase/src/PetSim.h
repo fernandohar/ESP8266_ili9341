@@ -28,7 +28,9 @@
 #define PET_ALL_GOOD_PET_WITHIN_MIN 60
 
 // Mini-game side effects (applied in applyGameReward).
-#define PET_GAME_WIN_EXCITEMENT 50
+#define PET_GAME_WIN_EXCITEMENT 5
+#define PET_GAME_LOSE_EXCITEMENT 10
+#define PET_GAME_CASUAL_EXCITEMENT 1   // 2P Tic-Tac-Toe (no win/lose verdict)
 #define PET_GAME_PLAY_HUNGER_COST 8
 #define PET_GAME_PLAY_CLEAN_COST 6
 

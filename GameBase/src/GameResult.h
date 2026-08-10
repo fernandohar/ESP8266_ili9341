@@ -11,7 +11,8 @@
 enum GameOutcome {
   GAME_RESULT_NONE = 0,
   GAME_RESULT_WIN,
-  GAME_RESULT_LOSS
+  GAME_RESULT_LOSS,
+  GAME_RESULT_NEUTRAL   // played but no win/loss verdict (e.g. 2P Tic-Tac-Toe)
 };
 
 // Payout for a win that names no amount of its own, and the flat consolation a

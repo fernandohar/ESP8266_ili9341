@@ -71,7 +71,7 @@ class Scene_Status : public GameScene {
     // line only appears sometimes, but both now clear the Back button.
     static const int16_t STATS_Y = 70;
     static const int16_t STATS_ROW_H = 30;
-    static const int16_t COINS_Y = 196;
+    static const int16_t COINS_Y = 166;
     static const int16_t SICK_Y = 240;
 
     boolean wasTouching = false;
@@ -97,8 +97,7 @@ class Scene_Status : public GameScene {
       const PetTotoroStats &s = PetTotoroState::stats();
       meterRow(y, "Hunger", s.hunger);
       meterRow(y + STATS_ROW_H, "Happy", s.happiness);
-      meterRow(y + STATS_ROW_H * 2, "Excite", s.excitement);
-      meterRow(y + STATS_ROW_H * 3, "Clean", s.cleanness);
+      meterRow(y + STATS_ROW_H * 2, "Clean", s.cleanness);
 
       drawCoins(COINS_Y);
 

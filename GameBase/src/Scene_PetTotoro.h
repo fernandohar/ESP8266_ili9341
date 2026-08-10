@@ -1498,9 +1498,17 @@ class Scene_PetTotoro : public GameScene {
         addSound(NOTE_E5, noteDurationMs(10, 900));
         addSound(NOTE_G5, noteDurationMs(10, 900));
         addSound(NOTE_C6, noteDurationMs(10, 900));
+      } else if (outcome == GAME_RESULT_NEUTRAL) {
+        happiness = GAME_LOSS_HAPPINESS;
+        PetTotoroState::addCareXP(GAME_LOSS_CARE_XP);
+        PetTotoroState::adjustExcitement(PET_GAME_CASUAL_EXCITEMENT);
+        label = "Good game!";
+        addSound(NOTE_C5, noteDurationMs(12, 700));
+        addSound(NOTE_E5, noteDurationMs(12, 700));
       } else {
         happiness = (reportedHappiness >= 0) ? reportedHappiness : GAME_LOSS_HAPPINESS;
         PetTotoroState::addCareXP(GAME_LOSS_CARE_XP);
+        PetTotoroState::adjustExcitement(-PET_GAME_LOSE_EXCITEMENT);
         label = "Nice try!";
         addSound(NOTE_C5, noteDurationMs(12, 700));
         addSound(NOTE_E5, noteDurationMs(12, 700));
