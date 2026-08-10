@@ -7,25 +7,26 @@
 // Rule-based teacher for auto-labeling training data and as an inference fallback
 // when the model is disabled or confidence is low.
 //
-// Care loop:
-//   Eat  — food restores hunger (+ happiness per grocery item).
-//   Bathe — restores cleanness only (not health).
-//   Pet / Play — raise happiness; play also costs hunger and cleanness when enabled.
+// Immediate needs (0..100 scale):
+//   Bathe — cleanness low.
+//   Eat   — hunger low.
+//   Play / Pet — happiness low; play if excitement is low, else pet.
 class CareActionRules {
   public:
     static CareAction suggest(const GameplaySample &sample) {
+      (void)sample;
       const PetTotoroStats &s = PetTotoroState::stats();
 
-      if (s.hunger < 30) {
-        return CARE_ACTION_EAT;
-      }
       if (s.cleanness < 25) {
         return CARE_ACTION_BATH;
       }
-      if (s.happiness < 35) {
-        return CARE_ACTION_PET;
+      if (s.hunger < 30) {
+        return CARE_ACTION_EAT;
       }
-      if (sample.lastOutcomeWin < 0.5f && sample.sessionGamesNorm > 0.3f) {
+      if (s.happiness < 35) {
+        if (s.excitement < 10) {
+          return CARE_ACTION_PLAY;
+        }
         return CARE_ACTION_PET;
       }
       return CARE_ACTION_PLAY;

@@ -95,9 +95,9 @@ class Scene_Status : public GameScene {
 
       int16_t y = STATS_Y;
       const PetTotoroStats &s = PetTotoroState::stats();
-      meterRow(y, "Health", s.health);
-      meterRow(y + STATS_ROW_H, "Hunger", s.hunger);
-      meterRow(y + STATS_ROW_H * 2, "Happy", s.happiness);
+      meterRow(y, "Hunger", s.hunger);
+      meterRow(y + STATS_ROW_H, "Happy", s.happiness);
+      meterRow(y + STATS_ROW_H * 2, "Excite", s.excitement);
       meterRow(y + STATS_ROW_H * 3, "Clean", s.cleanness);
 
       drawCoins(COINS_Y);
@@ -105,7 +105,7 @@ class Scene_Status : public GameScene {
       if (PetTotoroState::isSick()) {
         _tft->setTextDatum(MC_DATUM);
         _tft->setTextColor(rgb565(240, 120, 120), back);
-        _tft->drawString("Feeling sick - care for it!", SCREENWIDTH / 2, SICK_Y, 2);
+        _tft->drawString("Feeling unhappy - care for it!", SCREENWIDTH / 2, SICK_Y, 2);
       }
 
       drawBackButton();

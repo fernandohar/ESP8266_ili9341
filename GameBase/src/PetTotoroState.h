@@ -11,23 +11,12 @@
 #define PET_STAT_PIPS 4
 #define PET_STAT_PER_PIP (PET_STAT_MAX / PET_STAT_PIPS)
 
-// Care-based growth: careXP only ever grows (feeding, petting, cleaning, game
-// wins) and drives the visible stage. Decoupled from the clock so a wrong/reset
-// RTC can never rewind the pet's life.
-//
-// There are two stages, because each one costs a full sprite sheet to draw.
-// Only careXP is persisted, so this threshold can be retuned freely - a save
-// from an older build re-derives its stage from the XP it already had.
-//
-// 150 is roughly ten game wins or fifteen baths, so the pet grows up within a
-// session or two rather than making the adult art something most players never
-// see.
 #define PET_STAGE_ADULT_XP 150
 
 enum PetLifeState {
   PET_LIFE_ALIVE = 0,
-  PET_LIFE_SICK = 1,     // health bottomed out; recoverable grace period
-  PET_LIFE_ESCAPED = 2   // neglected too long; gone until a factory reset
+  PET_LIFE_SICK = 1,     // legacy slot; unused in the happiness model
+  PET_LIFE_ESCAPED = 2
 };
 
 enum PetStage {
@@ -36,19 +25,20 @@ enum PetStage {
 };
 
 struct PetTotoroStats {
-  int health;
+  int health;       // legacy (kept for old saves; not used in care sim)
   int hunger;
   int happiness;
   int cleanness;
+  int excitement;
 };
 
 class PetTotoroState {
   public:
     static void reset();
 
-    static bool isAlive();       // present (not escaped)
-    static bool isGameOver();    // escaped
-    static bool isSick();
+    static bool isAlive();
+    static bool isGameOver();
+    static bool isSick();        // true when very unhappy (UI banner)
     static bool hasEscaped();
     static PetLifeState life();
     static void setLife(PetLifeState value);
@@ -59,17 +49,31 @@ class PetTotoroState {
     static void setHunger(int value);
     static void setHappiness(int value);
     static void setCleanness(int value);
+    static void setExcitement(int value);
 
     static void adjustHealth(int delta);
     static void adjustHunger(int delta);
     static void adjustHappiness(int delta);
     static void adjustCleanness(int delta);
+    static void adjustExcitement(int delta);
 
-    // Care-based growth.
+    static int excitement();
+    static uint32_t minutesSinceLastPet();
+    static void setMinutesSinceLastPet(uint32_t minutes);
+    static void recordPetting();
+
+    // Fractional decay accumulators (PetSim statusUpdateTick).
+    static float &hungerDecayAccum();
+    static float &cleanDecayAccum();
+    static float &excitementDecayAccum();
+    static float &happyBoostAccum();
+    static float &happyPenaltyAccum();
+    static void tickMinutesSinceLastPet();
+
     static uint32_t careXP();
     static void setCareXP(uint32_t value);
     static void addCareXP(uint32_t amount);
-    static int stage();          // PET_STAGE_*
+    static int stage();
 
     static void reviveIfNeeded();
 
@@ -78,6 +82,12 @@ class PetTotoroState {
     static PetTotoroStats current;
     static PetLifeState lifeState;
     static uint32_t careXpValue;
+    static uint32_t minutesSinceLastPetValue;
+    static float hungerDecayAccumValue;
+    static float cleanDecayAccumValue;
+    static float excitementDecayAccumValue;
+    static float happyBoostAccumValue;
+    static float happyPenaltyAccumValue;
 };
 
 #endif

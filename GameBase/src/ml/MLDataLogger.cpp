@@ -38,11 +38,11 @@ static void logEvent(GameplayEventKind kind, int gameId, GameOutcome outcome,
   Serial.print(F(","));
   Serial.print(sample.happinessNorm, 3);
   Serial.print(F(","));
-  Serial.print(sample.healthNorm, 3);
+  Serial.print(sample.excitementNorm, 3);
   Serial.print(F(","));
   Serial.print(sample.cleanNorm, 3);
   Serial.print(F(","));
-  Serial.print(sample.isSick, 0);
+  Serial.print(sample.isUnhappy, 0);
   Serial.print(F(","));
   Serial.print(sample.lastGameIdNorm, 3);
   Serial.print(F(","));
@@ -57,7 +57,7 @@ static void logEvent(GameplayEventKind kind, int gameId, GameOutcome outcome,
 void MLDataLogger::printCsvHeader() {
 #if defined(TINYML_DATA_LOG)
   Serial.println(F("ML,ms,event,game_id,outcome,score,difficulty,session_sec,"
-                   "hunger,happy,health,clean,sick,game_id_norm,win,session_games,label"));
+                   "hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label"));
 #endif
 }
 
@@ -107,9 +107,9 @@ GameplaySample MLDataLogger::buildSample(int gameId, GameOutcome outcome) {
   GameplaySample sample = {};
   sample.hungerNorm = s.hunger / 100.0f;
   sample.happinessNorm = s.happiness / 100.0f;
-  sample.healthNorm = s.health / 100.0f;
+  sample.excitementNorm = s.excitement / 100.0f;
   sample.cleanNorm = s.cleanness / 100.0f;
-  sample.isSick = PetTotoroState::isSick() ? 1.0f : 0.0f;
+  sample.isUnhappy = PetTotoroState::isSick() ? 1.0f : 0.0f;
   sample.lastGameIdNorm = gameId / 7.0f;
   sample.lastOutcomeWin = (outcome == GAME_RESULT_WIN) ? 1.0f : 0.0f;
   float capped = sessionGames > 10 ? 10.0f : (float)sessionGames;

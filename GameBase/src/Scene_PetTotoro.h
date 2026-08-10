@@ -9,6 +9,7 @@
 #include "GameResult.h"
 #include "PendingMeal.h"
 #include "PetSave.h"
+#include "PetSim.h"
 #include "ml/MLGameHooks.h"
 #include "Input.h"
 #include "SpriteSheet.h"
@@ -31,19 +32,11 @@
 #define MAX_SOOT 8
 #define PET_SOOT_VARIANT_COUNT 16
 
-#define PET_HUNGER_TICK_MS 45000
-#define PET_HAPPINESS_TICK_MS 60000
-#define PET_HEALTH_TICK_MS 30000
 #define PET_SOOT_SPAWN_MIN_MS 18000
 #define PET_SOOT_SPAWN_MAX_MS 36000
 
-// Fail-state / recovery tuning.
-// Once health bottoms out the pet turns "sick"; if it stays that way for this
-// long (of powered-on time) Totoro gives up and runs away. With an RTC wired
-// this would instead be measured in real hours incl. time spent powered off.
-#define PET_SICK_GRACE_MS 60000
-// Health only regenerates while the pet is both well-fed and clean.
-#define PET_HEALTH_REGEN_THRESHOLD 60
+// Unhappy pet may leave after this grace period (powered-on time).
+#define PET_UNHAPPY_GRACE_MS 60000
 // Care XP awarded per soot cleaned (feeding/petting/game wins add more later).
 #define PET_CARE_XP_CLEAN 10
 
@@ -341,15 +334,13 @@ class Scene_PetTotoro : public GameScene {
       initSootPool();
 
       wasTouching = false;
-      sickSinceMs = 0;
-      nextHungerTickMs = millis() + PET_HUNGER_TICK_MS;
-      nextHappinessTickMs = millis() + PET_HAPPINESS_TICK_MS;
-      nextHealthTickMs = millis() + PET_HEALTH_TICK_MS;
+      unhappySinceMs = 0;
+      nextStatusTickMs = millis() + PET_STATUS_TICK_MS;
       nextSootSpawnMs = millis() + PET_SOOT_SPAWN_MIN_MS;
 
       if (PetTotoroState::isSick()) {
-        // Resumed into a sick pet: hold it still and start the grace clock now.
-        sickSinceMs = millis();
+        // Resumed while very unhappy: hold still and start the grace clock now.
+        unhappySinceMs = millis();
         if (pets[0].avatar != NULL) {
           pets[0].avatar->setVelocity(0, 0);
         }
@@ -432,7 +423,7 @@ class Scene_PetTotoro : public GameScene {
     SootSlot sootSlots[MAX_SOOT];
     boolean wasTouching = false;
     PetRoomState roomState = PET_ROOM_ACTIVE;
-    unsigned long sickSinceMs = 0;
+    unsigned long unhappySinceMs = 0;
 
     bool menuOpen = false;
     bool playOpen = false;
@@ -469,9 +460,7 @@ class Scene_PetTotoro : public GameScene {
     char speechText[28] = {0};
     unsigned long speechUntilMs = 0;
 
-    unsigned long nextHungerTickMs = 0;
-    unsigned long nextHappinessTickMs = 0;
-    unsigned long nextHealthTickMs = 0;
+    unsigned long nextStatusTickMs = 0;
     unsigned long nextSootSpawnMs = 0;
 
     void initSootPool() {
@@ -788,7 +777,7 @@ class Scene_PetTotoro : public GameScene {
              : (pick == 2) ? TOTORO_POSE_STAND
                            : TOTORO_POSE_DANCE;
       // Ambient mood cue: a low / unhappy Totoro would rather rest than romp.
-      if ((mood.happiness < PET_STAT_PER_PIP || mood.health < PET_STAT_PER_PIP) &&
+      if ((mood.happiness < PET_STAT_PER_PIP) &&
           (p.pose == TOTORO_POSE_WALK || p.pose == TOTORO_POSE_DANCE)) {
         p.pose = TOTORO_POSE_SIT;
       }
@@ -864,52 +853,34 @@ class Scene_PetTotoro : public GameScene {
         return;
       }
 
-      if (now >= nextHungerTickMs) {
-        nextHungerTickMs = now + PET_HUNGER_TICK_MS;
-        PetTotoroState::adjustHunger(-PET_STAT_PER_PIP);
-        addSound(NOTE_A3, noteDurationMs(32, 700));
-      }
-
-      if (now >= nextHappinessTickMs) {
-        nextHappinessTickMs = now + PET_HAPPINESS_TICK_MS;
-        PetTotoroState::adjustHappiness(-PET_STAT_PER_PIP);
-      }
-
-      if (now >= nextHealthTickMs) {
-        nextHealthTickMs = now + PET_HEALTH_TICK_MS;
-        const PetTotoroStats &stats = PetTotoroState::stats();
-        if (stats.hunger <= PET_STAT_MIN || stats.cleanness <= PET_STAT_MIN) {
-          PetTotoroState::adjustHealth(-PET_STAT_PER_PIP);
-          addSound(NOTE_G3, noteDurationMs(24, 600));
-        } else if (stats.hunger >= PET_HEALTH_REGEN_THRESHOLD &&
-                   stats.cleanness >= PET_HEALTH_REGEN_THRESHOLD &&
-                   stats.health < PET_STAT_MAX) {
-          PetTotoroState::adjustHealth(PET_STAT_PER_PIP);
-        }
+      while (now >= nextStatusTickMs) {
+        nextStatusTickMs += PET_STATUS_TICK_MS;
+        PetSim::statusUpdateTick();
       }
     }
 
-    // Drive the alive -> sick -> escaped fail-state (and sick -> alive recovery).
+    // Very low happiness -> Totoro may leave after a grace period.
     void updateLifeState(unsigned long now) {
-      return;  // TEMP(anniversary): Totoro can't get sick or run away for now.
+      if (roomState != PET_ROOM_ACTIVE) {
+        return;
+      }
       const PetTotoroStats &stats = PetTotoroState::stats();
-      if (stats.health <= PET_STAT_MIN) {
-        if (!PetTotoroState::isSick()) {
-          enterSick(now);
-        } else if (now - sickSinceMs >= PET_SICK_GRACE_MS) {
+      if (stats.happiness <= PET_ESCAPE_HAPPINESS) {
+        if (unhappySinceMs == 0) {
+          enterUnhappy(now);
+        } else if (now - unhappySinceMs >= PET_UNHAPPY_GRACE_MS) {
           triggerEscape();
         }
-      } else if (PetTotoroState::isSick()) {
-        PetTotoroState::setLife(PET_LIFE_ALIVE);
+      } else if (unhappySinceMs != 0) {
+        unhappySinceMs = 0;
         addSound(NOTE_E5, noteDurationMs(16, 900));
-        renderFullScreen();  // clear the sick banner cleanly
+        renderFullScreen();
         chooseNewPose(pets[0], now);
       }
     }
 
-    void enterSick(unsigned long now) {
-      PetTotoroState::setLife(PET_LIFE_SICK);
-      sickSinceMs = now;
+    void enterUnhappy(unsigned long now) {
+      unhappySinceMs = now;
       if (pets[0].avatar != NULL) {
         pets[0].avatar->setVelocity(0, 0);
       }
@@ -1477,6 +1448,7 @@ class Scene_PetTotoro : public GameScene {
         return;
       }
       PetTotoroState::adjustHappiness(PET_PET_HAPPINESS);
+      PetTotoroState::recordPetting();
       PetTotoroState::addCareXP(PET_CARE_XP_PET);
       petSession--;
       if (petSession == 0) {
@@ -1521,6 +1493,7 @@ class Scene_PetTotoro : public GameScene {
       if (outcome == GAME_RESULT_WIN) {
         happiness = (reportedHappiness >= 0) ? reportedHappiness : GAME_WIN_HAPPINESS;
         PetTotoroState::addCareXP(GAME_WIN_CARE_XP);
+        PetTotoroState::adjustExcitement(PET_GAME_WIN_EXCITEMENT);
         label = "Win!";
         addSound(NOTE_E5, noteDurationMs(10, 900));
         addSound(NOTE_G5, noteDurationMs(10, 900));
@@ -1533,6 +1506,8 @@ class Scene_PetTotoro : public GameScene {
         addSound(NOTE_E5, noteDurationMs(12, 700));
       }
       PetTotoroState::adjustHappiness(happiness);
+      PetTotoroState::adjustHunger(-PET_GAME_PLAY_HUNGER_COST);
+      PetTotoroState::adjustCleanness(-PET_GAME_PLAY_CLEAN_COST);
       if (coins > 0) {
         GameProgress::addCoins(coins);
         snprintf(rewardToast, sizeof(rewardToast), "%s +%d coins", label, coins);
@@ -1558,7 +1533,7 @@ class Scene_PetTotoro : public GameScene {
       _tft->fillRect(0, y, SCREENWIDTH, 20, rgb565(150, 40, 40));
       _tft->setTextDatum(MC_DATUM);
       _tft->setTextColor(TFT_WHITE, rgb565(150, 40, 40));
-      _tft->drawString("Totoro is sick - care for it!", SCREENWIDTH / 2, y + 10, 2);
+      _tft->drawString("Totoro is unhappy - care for it!", SCREENWIDTH / 2, y + 10, 2);
       _tft->setTextDatum(TL_DATUM);
     }
 

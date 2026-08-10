@@ -9,7 +9,7 @@
 //
 // CSV header (print once from setup when logging is enabled):
 // ML,ms,event,game_id,outcome,score,difficulty,session_sec,
-// hunger,happy,health,clean,sick,game_id_norm,win,session_games,label
+// hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label
 //
 // event: 0 = hub visit, 1 = game end (in mini-game scene, pre-reward stats).
 // Hub rows after a finished round repeat the last game's id/score/outcome with
