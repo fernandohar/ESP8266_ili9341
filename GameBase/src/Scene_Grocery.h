@@ -407,20 +407,11 @@ class Scene_Grocery : public GameScene {
       reconstructRegion(0, NAV_Y - 2, SCREENWIDTH, NAV_H + 4);
       navButton(HOME_X, "Home", rgb565(74, 42, 42), rgb565(210, 150, 150));
       if (hasPrevPage()) {
-        navArrowButton(PREV_X, /*pointRight=*/false);
+        drawArrowIcon(PREV_X + NAV_W / 2, NAV_Y + NAV_H / 2, /*pointRight=*/false);
       }
       if (hasNextPage()) {
-        navArrowButton(NEXT_X, /*pointRight=*/true);
+        drawArrowIcon(NEXT_X + NAV_W / 2, NAV_Y + NAV_H / 2, /*pointRight=*/true);
       }
-    }
-
-    // Glossy blue triangle (pixel-art style) for page prev/next.
-    void navArrowButton(int16_t x, bool pointRight) {
-      uint16_t fill = rgb565(70, 90, 120);
-      uint16_t border = rgb565(160, 180, 210);
-      _tft->fillRoundRect(x, NAV_Y, NAV_W, NAV_H, 8, fill);
-      _tft->drawRoundRect(x, NAV_Y, NAV_W, NAV_H, 8, border);
-      drawArrowIcon(x + NAV_W / 2, NAV_Y + NAV_H / 2, pointRight);
     }
 
     void drawArrowIcon(int16_t cx, int16_t cy, bool pointRight) {
