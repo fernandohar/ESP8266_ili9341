@@ -50,7 +50,7 @@
 
 struct GroceryFood {
   const char *name;
-  int16_t cost;       // coins (0 == free)
+  int16_t cost;       // coins
   int8_t hunger;      // stat delta applied on eat (0..100 scale)
   int8_t happiness;   // stat delta applied on eat (may be negative)
 };
@@ -112,30 +112,31 @@ class Scene_Grocery : public GameScene {
     }
 
     const GroceryFood &food(int index) {
-      // All free for now (cost 0) so the loop is easy to test. Hunger/happiness
-      // deltas are tunable: fillers (bun, onigiri, yam, ramen) top up hunger;
-      // treats (cotton candy, soft serve, dorayaki) lift happiness; veg
-      // (broccoli, green onion) fill a little but dent happiness.
+      // Display order (cheap veg → meals → treats). spriteFood maps to the
+      // fixed sprite sheet layout in sprite_grocery_food.h.
       static const GroceryFood FOODS[GROCERY_FOOD_COUNT] = {
-        {"Broccoli",    0, 15, -2},
-        {"Cotton candy",0,  3, 22},
-        {"Salad",       0, 14,  3},
-        {"Bun",         0, 25,  6},
-        {"Onigiri",     0, 22,  4},
-        {"Soft serve",  0,  6, 20},
-        {"Sushi",       0, 20, 15},
-        {"Hamburger",   0, 35, 10},
-        {"Dorayaki",    0, 12, 18},
-        {"Yam",         0, 24,  5},
-        {"Green onion", 0, 10, -3},
-        {"Ramen",       0, 34, 14},
+        {"Broccoli",     5, 15,  -8},
+        {"Green onion", 10, 10, -10},
+        {"Salad",       10, 14,   1},
+        {"Onigiri",     15, 22,   1},
+        {"Yam",         10,  5,   1},
+        {"Bun",         18, 25,   2},
+        {"Hamburger",   22, 35,   2},
+        {"Sushi",       25, 20,   3},
+        {"Ramen",       41, 34,   3},
+        {"Dorayaki",    21, 12,   4},
+        {"Cotton candy",23,  3,   5},
+        {"Soft serve",  26,  6,   5},
       };
       return FOODS[index];
     }
 
     // Region index in sprite_grocery_food for a given food + frame.
+    // Parallel to FOODS[] display order; values index sprite sheet food groups.
     static int regionIndex(int foodIndex, int frame) {
-      return foodIndex * GROCERY_FRAMES_PER_FOOD + frame;
+      static const uint8_t SPRITE[GROCERY_FOOD_COUNT] = {
+          0, 10, 2, 4, 9, 3, 7, 6, 11, 8, 1, 5};
+      return SPRITE[foodIndex] * GROCERY_FRAMES_PER_FOOD + frame;
     }
 
     // ---- layout ------------------------------------------------------------
