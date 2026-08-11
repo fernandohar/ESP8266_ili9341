@@ -404,7 +404,7 @@ class Scene_Grocery : public GameScene {
 
     void drawNavBar() {
       // Clear the nav strip back to grass before redraw (hides removed arrows).
-      reconstructRegion(0, NAV_Y - 2, SCREENWIDTH, NAV_H + 4);
+      reconstructRegion(0, NAV_Y - 18, SCREENWIDTH, NAV_H + 36);
       navButton(HOME_X, "Home", rgb565(74, 42, 42), rgb565(210, 150, 150));
       if (hasPrevPage()) {
         drawArrowIcon(PREV_X + NAV_W / 2, NAV_Y + NAV_H / 2, /*pointRight=*/false);
@@ -421,15 +421,15 @@ class Scene_Grocery : public GameScene {
       uint16_t shade = rgb565(28, 92, 168);
 
       if (pointRight) {
-        _tft->fillTriangle(cx - 7, cy - 8, cx - 7, cy + 8, cx + 8, cy, outline);
-        _tft->fillTriangle(cx - 6, cy - 7, cx - 6, cy + 7, cx + 6, cy, body);
-        _tft->fillTriangle(cx - 6, cy - 5, cx - 6, cy + 5, cx - 2, cy, shine);
-        _tft->fillTriangle(cx - 5, cy + 1, cx - 5, cy + 6, cx + 4, cy + 1, shade);
+        _tft->fillTriangle(cx - 14, cy - 16, cx - 14, cy + 16, cx + 16, cy, outline);
+        _tft->fillTriangle(cx - 12, cy - 14, cx - 12, cy + 14, cx + 12, cy, body);
+        _tft->fillTriangle(cx - 12, cy - 10, cx - 12, cy + 10, cx - 4, cy, shine);
+        _tft->fillTriangle(cx - 10, cy + 2, cx - 10, cy + 12, cx + 8, cy + 2, shade);
       } else {
-        _tft->fillTriangle(cx + 7, cy - 8, cx + 7, cy + 8, cx - 8, cy, outline);
-        _tft->fillTriangle(cx + 6, cy - 7, cx + 6, cy + 7, cx - 6, cy, body);
-        _tft->fillTriangle(cx + 6, cy - 5, cx + 6, cy + 5, cx + 2, cy, shine);
-        _tft->fillTriangle(cx + 5, cy + 1, cx + 5, cy + 6, cx - 4, cy + 1, shade);
+        _tft->fillTriangle(cx + 14, cy - 16, cx + 14, cy + 16, cx - 16, cy, outline);
+        _tft->fillTriangle(cx + 12, cy - 14, cx + 12, cy + 14, cx - 12, cy, body);
+        _tft->fillTriangle(cx + 12, cy - 10, cx + 12, cy + 10, cx + 4, cy, shine);
+        _tft->fillTriangle(cx + 10, cy + 2, cx + 10, cy + 12, cx - 8, cy + 2, shade);
       }
     }
 
