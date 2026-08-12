@@ -2,17 +2,26 @@
 
 Care-action classifier for Pet Totoro. See [`../docs/TINYML_PLAN.md`](../docs/TINYML_PLAN.md).
 
-After the pet-care redesign, features and labels follow `CareActionRules.h`:
+Features and labels follow `CareActionRules.h`, which serves whichever stat sits
+furthest below its care target (80 for hunger, cleanness, and happiness):
 
 | Priority | Condition (0..100 stats) | Label |
 |----------|--------------------------|-------|
-| 1 | `cleanness < 25` | `bath` |
-| 2 | `hunger < 30` | `eat` |
-| 3 | `happiness < 35` and `excitement < 10` | `play` |
-| 3 | `happiness < 35` and `excitement ≥ 10` | `pet` |
-| else | — | `play` |
+| 1 | `hunger < 15` — starving, and it steepens the happiness decay | `eat` |
+| 2 | `cleanness < 10` — filthy, same penalty | `bath` |
+| 3 | hunger is furthest below target | `eat` |
+| 3 | cleanness is furthest below target | `bath` |
+| 3 | happiness is furthest below target, and `excitement < 40` | `play` |
+| 3 | happiness is furthest below target, and `excitement ≥ 40` | `pet` |
+| else | every target met, and `excitement < 80` | `play` |
+| else | every target met, and `excitement ≥ 80` | `pet` |
+
+`play` is only ever suggested when the pet can pay a round's hunger/cleanness
+cost (`hunger > 18` and `cleanness > 16`); otherwise it falls back to `pet`.
 
 **Excitement is hidden from the player UI** but is logged on Serial for training.
+It is not ranked as a need of its own: it decays ~1.5%/min, so it sits near zero
+between games and would otherwise make `play` the answer almost every time.
 
 ---
 
@@ -74,10 +83,15 @@ pio device monitor -b 115200 | python download_serial.py > data/raw/sessions.csv
 
 | `event` | When logged | Use for training? |
 |---------|-------------|-------------------|
-| `0` | Hub visit (after `applyGameReward`) | **Yes — preferred** |
-| `1` | Game end (pre-reward stats) | Optional |
+| `0` | Hub visit (after `applyGameReward`) | **Yes — kept by default** |
+| `2` | Care state (after a feed / pet / bath landed) | **Yes — kept by default** |
+| `1` | Game end (pre-reward stats) | Optional (`--all-events`) |
 
-Hub rows have correct post-game hunger, cleanness, and excitement.
+Hub rows have correct post-game hunger, cleanness, and excitement, but they are
+written moments after the reward tops happiness up, so on their own they cluster
+at the high end of every stat. Care rows sample the pet right after a stat moved
+the other way (a bath, or one of the vegetables that costs happiness), which is
+what stops the `happy` column from being a constant.
 
 ---
 
@@ -85,7 +99,7 @@ Hub rows have correct post-game hunger, cleanness, and excitement.
 
 ```bash
 python prepare_dataset.py data/raw/sessions.csv
-# → data/processed/sessions.csv (hub rows only)
+# → data/processed/sessions.csv (at-home rows: events 0 and 2)
 ```
 
 Options:

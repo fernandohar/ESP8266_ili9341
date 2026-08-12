@@ -68,17 +68,30 @@ void MLDataLogger::resetSession() {
 #endif
 }
 
+#if defined(TINYML_DATA_LOG)
+// Log the current pet stats against the last finished round's context, so a row
+// taken in the home still says which game was played and how it went — not zeros.
+static void logWithLastGame(GameplayEventKind kind) {
+  if (s_hasLastGame) {
+    logEvent(kind, s_lastGameId, s_lastOutcome, s_lastScore, s_lastDifficulty,
+             s_lastSessionSec);
+  } else {
+    logEvent(kind, SCENE_PET_TOTORO, GAME_RESULT_NONE, 0, 0, 0);
+  }
+}
+#endif
+
 void MLDataLogger::onHubVisit() {
 #if defined(TINYML_DATA_LOG)
   // Returning home after a game: pet stats are post-reward (applyGameReward ran
-  // first) but we still need the finished round's id/score/outcome here — not
-  // zeros. Game-end rows logged in the mini-game scene carry pre-reward stats.
-  if (s_hasLastGame) {
-    logEvent(GAMEPLAY_EVENT_HUB_VISIT, s_lastGameId, s_lastOutcome, s_lastScore,
-             s_lastDifficulty, s_lastSessionSec);
-  } else {
-    logEvent(GAMEPLAY_EVENT_HUB_VISIT, SCENE_PET_TOTORO, GAME_RESULT_NONE, 0, 0, 0);
-  }
+  // first). Game-end rows logged in the mini-game scene carry pre-reward stats.
+  logWithLastGame(GAMEPLAY_EVENT_HUB_VISIT);
+#endif
+}
+
+void MLDataLogger::onCareState() {
+#if defined(TINYML_DATA_LOG)
+  logWithLastGame(GAMEPLAY_EVENT_CARE_STATE);
 #endif
 }
 

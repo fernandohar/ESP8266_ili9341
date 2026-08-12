@@ -10,6 +10,11 @@ inline void mlLogHubVisit() {
   MLDataLogger::onHubVisit();
 }
 
+// Call once a care action's effect has been applied to the pet's stats.
+inline void mlLogCareState() {
+  MLDataLogger::onCareState();
+}
+
 inline void mlLogGameEnd(int gameId, GameOutcome outcome, int score, int difficulty, uint16_t sessionSeconds) {
   MLDataLogger::onGameEnd(gameId, outcome, score, difficulty, sessionSeconds);
 }

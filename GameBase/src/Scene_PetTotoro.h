@@ -221,7 +221,6 @@ class Scene_PetTotoro : public GameScene {
         repaintRoom();
       }
 
-      tickStats(now);
       if (!dragging && !dropping) {
         updatePose(now);  // a held or falling Totoro keeps the pose it has
       }
@@ -335,7 +334,6 @@ class Scene_PetTotoro : public GameScene {
 
       wasTouching = false;
       unhappySinceMs = 0;
-      nextStatusTickMs = millis() + PET_STATUS_TICK_MS;
       nextSootSpawnMs = millis() + PET_SOOT_SPAWN_MIN_MS;
 
       if (PetTotoroState::isSick()) {
@@ -460,7 +458,6 @@ class Scene_PetTotoro : public GameScene {
     char speechText[28] = {0};
     unsigned long speechUntilMs = 0;
 
-    unsigned long nextStatusTickMs = 0;
     unsigned long nextSootSpawnMs = 0;
 
     void initSootPool() {
@@ -740,6 +737,7 @@ class Scene_PetTotoro : public GameScene {
       PetTotoroState::adjustHappiness(mealHappiness);
       PetTotoroState::addCareXP(PET_EAT_CARE_XP);
       PetSave::save();
+      mlLogCareState();
 
       snprintf(rewardToast, sizeof(rewardToast), "Yum! +%d", mealHunger);
       rewardToastUntilMs = now + PET_REWARD_TOAST_MS;
@@ -845,17 +843,6 @@ class Scene_PetTotoro : public GameScene {
         p.poseFrameMs = now;
         p.poseFrameB = !p.poseFrameB;
         setMirrored(p, p.poseFrameB);
-      }
-    }
-
-    void tickStats(unsigned long now) {
-      if (roomState != PET_ROOM_ACTIVE) {
-        return;
-      }
-
-      while (now >= nextStatusTickMs) {
-        nextStatusTickMs += PET_STATUS_TICK_MS;
-        PetSim::statusUpdateTick();
       }
     }
 
@@ -1454,6 +1441,7 @@ class Scene_PetTotoro : public GameScene {
       if (petSession == 0) {
         petCooldownUntilMs = millis() + PET_PET_COOLDOWN_MS;
       }
+      mlLogCareState();
       addSound(NOTE_E5, noteDurationMs(16, 900));
       addSound(NOTE_G5, noteDurationMs(16, 900));
     }
@@ -1469,6 +1457,7 @@ class Scene_PetTotoro : public GameScene {
         }
       }
       PetTotoroState::addCareXP(PET_CARE_XP_BATHE);
+      mlLogCareState();
       addSound(NOTE_C5, noteDurationMs(16, 900));
       addSound(NOTE_E5, noteDurationMs(16, 900));
       addSound(NOTE_G5, noteDurationMs(16, 900));

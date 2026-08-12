@@ -6,7 +6,9 @@ The device logs wide rows prefixed with ML,:
   hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label
 
 Hub rows (event=0) are logged when returning to the pet home *after* game rewards
-(hunger/clean/excitement applied). Prefer those for training.
+(hunger/clean/excitement applied). Care rows (event=2) are logged just after a
+feed / pet / bath took effect. Both describe the pet while it is at home, so both
+are kept by default; game-end rows (event=1) need --all-events.
 
 Usage:
   python prepare_dataset.py data/raw/sessions.csv
@@ -33,12 +35,27 @@ FEATURES = [
 ]
 LABELS = ["eat", "play", "pet", "bath"]
 
+# Event kinds from GameplaySample.h that describe the pet at home.
+HOME_EVENTS = (0, 2)
+
 # Thresholds mirrored from CareActionRules.h / PetSim.h (0..100 on device).
-CLEAN_BATH = 25
-HUNGER_EAT = 30
-HAPPY_LOW = 35
-EXCITE_PLAY = 10
+CRITICAL_HUNGER = 15
+CRITICAL_CLEAN = 10
+TARGET_HUNGER = 80
+TARGET_CLEAN = 80
+TARGET_HAPPY = 80
+BORED_EXCITEMENT = 40
+ALL_GOOD_EXCITEMENT = 80
+PLAY_HUNGER_MIN = 18  # PET_GAME_PLAY_HUNGER_COST + CARE_PLAY_COST_MARGIN
+PLAY_CLEAN_MIN = 16   # PET_GAME_PLAY_CLEAN_COST + CARE_PLAY_COST_MARGIN
 HAPPY_UNHAPPY = 15
+
+
+def deficit_pct(value: float, target: float) -> float:
+    """Percent short of a care target; 0 at or above it."""
+    if target <= 0 or value >= target:
+        return 0.0
+    return (target - value) * 100.0 / target
 
 
 def suggest_from_features(row: pd.Series) -> str:
@@ -48,13 +65,24 @@ def suggest_from_features(row: pd.Series) -> str:
     happy = row["happy"] * 100.0 if row["happy"] <= 1.0 else row["happy"]
     excitement = row["excitement"] * 100.0 if row["excitement"] <= 1.0 else row["excitement"]
 
-    if clean < CLEAN_BATH:
-        return "bath"
-    if hunger < HUNGER_EAT:
+    if hunger < CRITICAL_HUNGER:
         return "eat"
-    if happy < HAPPY_LOW:
-        return "play" if excitement < EXCITE_PLAY else "pet"
-    return "play"
+    if clean < CRITICAL_CLEAN:
+        return "bath"
+
+    hunger_gap = deficit_pct(hunger, TARGET_HUNGER)
+    clean_gap = deficit_pct(clean, TARGET_CLEAN)
+    happy_gap = deficit_pct(happy, TARGET_HAPPY)
+    worst = max(hunger_gap, clean_gap, happy_gap)
+
+    can_play = hunger > PLAY_HUNGER_MIN and clean > PLAY_CLEAN_MIN
+    if worst == 0:
+        return "play" if excitement < ALL_GOOD_EXCITEMENT and can_play else "pet"
+    if hunger_gap == worst:
+        return "eat"
+    if clean_gap == worst:
+        return "bath"
+    return "play" if excitement < BORED_EXCITEMENT and can_play else "pet"
 
 
 def load_serial(path: Path) -> pd.DataFrame:
@@ -74,9 +102,9 @@ def load_serial(path: Path) -> pd.DataFrame:
     return pd.read_csv(StringIO(text))
 
 
-def normalize(df: pd.DataFrame, hub_only: bool) -> pd.DataFrame:
-    if hub_only and "event" in df.columns:
-        df = df[df["event"] == 0].copy()
+def normalize(df: pd.DataFrame, home_only: bool) -> pd.DataFrame:
+    if home_only and "event" in df.columns:
+        df = df[df["event"].isin(HOME_EVENTS)].copy()
 
     rename = {
         "hungerNorm": "hunger",
@@ -124,12 +152,12 @@ def main() -> None:
     parser.add_argument(
         "--all-events",
         action="store_true",
-        help="Keep game-end rows (event=1) as well as hub rows",
+        help="Keep game-end rows (event=1) as well as the at-home rows",
     )
     args = parser.parse_args()
 
     df = load_serial(args.input)
-    out_df = normalize(df, hub_only=not args.all_events)
+    out_df = normalize(df, home_only=not args.all_events)
 
     out_path = args.output
     if out_path is None:

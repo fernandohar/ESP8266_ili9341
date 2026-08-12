@@ -12,6 +12,7 @@
 #include "Input.h"
 #include "SoundPlayer.h"
 #include "PetSave.h"
+#include "PetSim.h"
 #include <TFT_eSPI.h>
 
 class GameSceneManager {
@@ -34,6 +35,10 @@ class GameSceneManager {
 
       //Uses deWiTTERS game loop's Constant Game Speed with Maximum FPS
       loop = 0;
+
+      // The care simulation runs here rather than in the pet scene so that time
+      // spent in mini-games, the grocery, or a modal menu still ages the pet.
+      PetSim::service(millis());
 
       //when we have slow hardware and the update + logic is taking too much time, we will skip rendering and update again. 
       //After skipping MAX_FRAMESKIP number of frames, we force rendering, and the game will slow down

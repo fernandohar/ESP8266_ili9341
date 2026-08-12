@@ -27,7 +27,8 @@ enum CareAction : uint8_t {
 
 enum GameplayEventKind : uint8_t {
   GAMEPLAY_EVENT_HUB_VISIT = 0,
-  GAMEPLAY_EVENT_GAME_END = 1
+  GAMEPLAY_EVENT_GAME_END = 1,
+  GAMEPLAY_EVENT_CARE_STATE = 2   // right after a care action landed
 };
 
 #endif

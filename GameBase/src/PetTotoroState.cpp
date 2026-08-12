@@ -8,8 +8,8 @@ uint32_t PetTotoroState::minutesSinceLastPetValue = 0;
 float PetTotoroState::hungerDecayAccumValue = 0;
 float PetTotoroState::cleanDecayAccumValue = 0;
 float PetTotoroState::excitementDecayAccumValue = 0;
+float PetTotoroState::happyDecayAccumValue = 0;
 float PetTotoroState::happyBoostAccumValue = 0;
-float PetTotoroState::happyPenaltyAccumValue = 0;
 
 void PetTotoroState::reset() {
   current.health = PET_STAT_MAX;
@@ -23,8 +23,8 @@ void PetTotoroState::reset() {
   hungerDecayAccumValue = 0;
   cleanDecayAccumValue = 0;
   excitementDecayAccumValue = 0;
+  happyDecayAccumValue = 0;
   happyBoostAccumValue = 0;
-  happyPenaltyAccumValue = 0;
 }
 
 bool PetTotoroState::isAlive() {
@@ -133,12 +133,12 @@ float &PetTotoroState::excitementDecayAccum() {
   return excitementDecayAccumValue;
 }
 
-float &PetTotoroState::happyBoostAccum() {
-  return happyBoostAccumValue;
+float &PetTotoroState::happyDecayAccum() {
+  return happyDecayAccumValue;
 }
 
-float &PetTotoroState::happyPenaltyAccum() {
-  return happyPenaltyAccumValue;
+float &PetTotoroState::happyBoostAccum() {
+  return happyBoostAccumValue;
 }
 
 void PetTotoroState::tickMinutesSinceLastPet() {

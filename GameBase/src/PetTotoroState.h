@@ -66,8 +66,8 @@ class PetTotoroState {
     static float &hungerDecayAccum();
     static float &cleanDecayAccum();
     static float &excitementDecayAccum();
+    static float &happyDecayAccum();
     static float &happyBoostAccum();
-    static float &happyPenaltyAccum();
     static void tickMinutesSinceLastPet();
 
     static uint32_t careXP();
@@ -86,8 +86,8 @@ class PetTotoroState {
     static float hungerDecayAccumValue;
     static float cleanDecayAccumValue;
     static float excitementDecayAccumValue;
+    static float happyDecayAccumValue;
     static float happyBoostAccumValue;
-    static float happyPenaltyAccumValue;
 };
 
 #endif
