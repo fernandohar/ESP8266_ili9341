@@ -11,6 +11,14 @@
 #define SCREENWIDTH 240
 #define SCREENHEIGHT 320
 #define SPEAKER_PIN 16 //D0 - GPIO16
+
+// Both the logging and the inference build need the gesture sampler running. Derived
+// here rather than in GameSceneManager.h so that GameScene.cpp sees it too - the
+// renderer has to cooperate with the sampler to keep it on schedule.
+#if defined(TINYML_GESTURE_LOG) || defined(TINYML_GESTURE_INFERENCE)
+#define GESTURE_TOUCH_SAMPLER 1
+#endif
+
 class GameScene {
   public:
     virtual void update(boolean isTouching, boolean* needChangeScene, int* nextSceneIndex) = 0;  //function to update Game logic
@@ -100,6 +108,11 @@ class GameScene {
     void enableDebug() { isDebugEnabled = true; }
     void disableDebug() {isDebugEnabled = false; }
   private:
+    // Pushing a frame holds the SPI bus for tens of milliseconds, which is long
+    // enough for a whole tap to begin and end unseen. Called between rows so the
+    // gesture sampler keeps its own clock through a repaint.
+    void serviceTouchSampler();
+
     int collectRowRedrawSpans(int16_t screenY, int16_t clipMinx, int16_t clipMaxx,
                               int16_t unionDirtyMinx, int16_t unionDirtyMaxx,
                               int16_t unionDirtyMiny, int16_t unionDirtyMaxy,

@@ -4,7 +4,9 @@
 #define UPDATES_PER_SECOND 20
 #define UPDATES_DT 1000 / UPDATES_PER_SECOND
 #define MAX_FRAMESKIP 5
-#define MAXSCENES 10
+// The gesture-log build now registers 12 scenes, which exactly filled the old
+// ceiling of 12; appendScene() does not bounds-check, so keep headroom here.
+#define MAXSCENES 16
 
 //#define DEBUG_SCENEMANAGER
 #include <Arduino.h>
@@ -14,6 +16,10 @@
 #include "PetSave.h"
 #include "PetSim.h"
 #include <TFT_eSPI.h>
+
+#if defined(GESTURE_TOUCH_SAMPLER)  // set by GameScene.h, included above
+#include "ml/TouchSampler.h"
+#endif
 
 class GameSceneManager {
   public:
@@ -35,6 +41,13 @@ class GameSceneManager {
 
       //Uses deWiTTERS game loop's Constant Game Speed with Maximum FPS
       loop = 0;
+
+#if defined(GESTURE_TOUCH_SAMPLER)
+      // Sampled out here rather than on the fixed tick: a poke can be over in
+      // 100 ms, which the 20 Hz tick would describe with two points. This runs
+      // every loop() and rate-limits itself internally.
+      TouchSampler::poll(millis());
+#endif
 
       // The care simulation runs here rather than in the pet scene so that time
       // spent in mini-games, the grocery, or a modal menu still ages the pet.
@@ -109,6 +122,11 @@ class GameSceneManager {
       _currentScenePtr = _scenes[_currentSceneIndex];
       _currentScenePtr->initScene();
       Input::syncEdges();
+#if defined(GESTURE_TOUCH_SAMPLER)
+      // A touch that spans the transition must not be recorded as a gesture in
+      // the scene it landed in.
+      TouchSampler::reset();
+#endif
 
 //#ifdef DEBUG_SCENEMANAGER       
 //      frameStart = millis();

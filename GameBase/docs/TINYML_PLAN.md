@@ -113,10 +113,34 @@ Only after you instrument **input rate, retries, session length** and add a quic
 
 ### Phase 3 — On-device inference (Arduino-friendly)
 
-- Add **`esp32-tinyml`** PlatformIO env with `TINYML_INFERENCE=1`  
-- Integrate **TensorFlow Lite Micro** (or EloquentTinyML) — ~3 KB model  
-- `CareActionPredictor::predict()` → `CareAction` + confidence  
-- `Scene_PetTotoro`: highlight radial menu item when confidence ≥ 0.65  
+- [x] **`esp32-tinyml`** PlatformIO env with `TINYML_INFERENCE=1`
+- [x] **TensorFlow Lite Micro** via `tanakamasayuki/TensorFlowLite_ESP32` — the
+      Arduino-framework port; upstream TFLM and ESP-IDF ports do not build under
+      `framework = arduino`
+- [x] `tinyml/export_model_header.py` — 3.4 KB flatbuffer **plus the scaler
+      constants** into `src/ml/models/care_action_model.h`
+- [x] `CareActionPredictor::predict()` → `CareAction` + confidence, falling back
+      to `CareActionRules` on any failure or when confidence < 0.65
+- [x] `Scene_PetTotoro`: yellow ring on the suggested radial menu item
+- [x] Verified on hardware — `ML: care model ready, arena 916/4096 bytes`, ring
+      tracks the neediest stat
+- [ ] Optional dev overlay showing confidence and inference time
+
+Keep the 4 KB tensor arena: `arena_used_bytes()` reports 916, but the memory
+planner's own bookkeeping comes out of the same arena, and trimming to 1280 broke
+`AllocateTensors` with "Too many buffers (max is 4)".
+
+Measured cost: **+54 KB flash** (71.2% → 75.3%) and **+4.5 KB RAM**, with only
+`FullyConnected` and `Softmax` registered — `AllOpsResolver` costs ~237 KB.
+`tinyml/eval_tflite.py` scores the exported model through the same scaler and
+threshold the firmware uses: 99.0% agreement with the oracle, and the model is
+confident enough to drive the UI on 95.7% of rows.
+
+Hardware testing drove one rule change. The oracle originally ranked each stat by
+its shortfall against a care target of 80, so a thriving pet (hunger 94,
+cleanness 88, happiness 100) had no deficit to serve and got a distraction —
+`pet` — instead of the bath its lowest stat called for. It now ranks the raw
+values, which is what "suggest how to raise the lowest stat" actually means.
 
 **Skip ESP-DL until this works.**
 
@@ -183,8 +207,12 @@ Mini-game / Pet hub
 
 1. ~~Call `MLDataLogger::onGameEnd(...)` from each mini-game via a thin wrapper.~~  
 2. ~~Call `MLDataLogger::onHubVisit(...)` when entering `Scene_PetTotoro`.~~  
-3. Play 20 sessions → `python tinyml/download_serial.py > data/raw/sessions.csv`  
-4. Train → drop `care_action.tflite` into `src/ml/models/`  
-5. Wire `CareActionPredictor` into pet hub UI.
+3. ~~Play 20 sessions → `python tinyml/download_serial.py > data/raw/sessions.csv`~~  
+4. ~~Train → drop `care_action.tflite` into `src/ml/models/`~~  
+5. ~~Wire `CareActionPredictor` into pet hub UI.~~  
+6. Flash `esp32-tinyml` and confirm on hardware: the boot line
+   `ML: care model ready, arena N/4096 bytes` and a ring on the suggested action.
+7. Collect more real rows (especially `pet`) and re-pool — synthetic rows still
+   outnumber real ones roughly 19:1.
 
 See `GameBase/tinyml/README.md` for commands.

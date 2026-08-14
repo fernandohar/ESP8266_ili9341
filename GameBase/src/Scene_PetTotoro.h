@@ -11,6 +11,11 @@
 #include "PetSave.h"
 #include "PetSim.h"
 #include "ml/MLGameHooks.h"
+#include "ml/CareActionPredictor.h"
+#if defined(TINYML_GESTURE_INFERENCE)
+#include "ml/GesturePredictor.h"
+#include "ml/TouchSampler.h"
+#endif
 #include "Input.h"
 #include "SpriteSheet.h"
 #include "Attachment.h"
@@ -85,8 +90,10 @@
 #define PET_TAP_PADDING 12
 
 // --- Picking Totoro up and dragging it around ---
-// A press on the pet is only a drag once the finger has travelled this far;
-// anything shorter is still a tap and opens the radial menu on release.
+// A press on the pet is only a drag once the finger has travelled this far; anything
+// shorter is still a tap and opens the radial menu on release. Gesture builds ignore
+// this and use the hold below instead, since a tap there is a poke and a stroke across
+// the pet has to stay available to the classifier.
 #define PET_DRAG_THRESHOLD 6
 // How high it can be lifted, and how fast it drops back when let go mid-air.
 #define PET_DRAG_MIN_Y 60
@@ -94,6 +101,41 @@
 // The resistive panel drops a reading now and then; ignore this many empty
 // ticks before deciding the finger really left the glass.
 #define PET_DRAG_RELEASE_TICKS 2
+
+// --- Touch gestures (esp32-gesture builds) --------------------------------
+// Holding still on Totoro *arms* the hold: a blip acknowledges it, and from there
+// letting go opens the menu while moving on picks Totoro up instead. One hold serves
+// both because they are told apart by what the finger does next, the way long-press
+// then drag works on a phone.
+//
+// Arming is decided live rather than by the classifier, for two reasons: carrying has
+// to begin while the finger is still down, and the menu is the one interaction that
+// cannot afford a 5% miss rate. `GESTURE_LONG_PRESS` therefore never reaches
+// handleGesture(); it stays in the class set only so the model is not forced to file
+// holds under some other gesture.
+#define PET_GRAB_HOLD_MS 400
+// ...and only if the finger stayed put, which is what separates a hold from a slow
+// brush stroke over the same spot. Measured across all 642 captures, resampled to the
+// 50 ms game tick the scene actually reads the panel on, at the instant contact
+// reaches PET_GRAB_HOLD_MS: a real long press had covered 5-23 px, while every brush,
+// circle, zigzag or scribble that lasts that long had covered at least 96 px.
+#define PET_GRAB_MAX_TRAVEL_PX 80.0f
+// How far the finger has to move after arming to mean "carry me" rather than "menu".
+// Intent is already established by then, so this only has to clear touch jitter; the
+// plain drag threshold in non-gesture builds is 6 px and works.
+#define PET_CARRY_BREAK_PX 10
+// A poke on empty floor sends Totoro walking there; a swipe sends it to the wall
+// in a hurry.
+#define PET_WALK_TO_SPEED 1.8f
+#define PET_FLEE_SPEED 2.8f
+#define PET_WALK_ARRIVE_PX 4
+// How long a commanded pose holds before idle posing takes over again. Set as a
+// pose deadline, so hunger and sickness still override it the way they override
+// any other pose.
+#define PET_ATTENTION_HOLD_MS 1800
+#define PET_PETTED_HOLD_MS 1500
+#define PET_DANCE_HOLD_MS 4500
+#define PET_SULK_HOLD_MS 6000
 
 // --- Free / in-place care actions ---
 #define PET_PET_HAPPINESS 6
@@ -110,6 +152,8 @@
 #define GAME_WIN_CARE_XP 15
 #define GAME_LOSS_CARE_XP 5
 #define PET_REWARD_TOAST_MS 2200
+// How long a speech bubble (love note, greeting) stays up.
+#define PET_SPEECH_HOLD_MS 3500
 
 enum PetMenuItem {
   PET_MENU_PLAY = 0,
@@ -157,6 +201,13 @@ class Scene_PetTotoro : public GameScene {
 
       // Eating is a brief, non-interruptible animation: just advance it.
       if (eating) {
+#if defined(TINYML_GESTURE_INFERENCE)
+        // Gestures made during the meal are drawn but never acted on.
+        TouchSampler::consumePreview();
+        if (TouchSampler::episodeReady()) {
+          TouchSampler::consumeEpisode();
+        }
+#endif
         updateEating(now);
         wasTouching = isTouching;
         requestRender();
@@ -172,6 +223,11 @@ class Scene_PetTotoro : public GameScene {
           return;
         }
         if (isTouching && !wasTouching) {
+#if defined(TINYML_GESTURE_INFERENCE)
+          // The overlay owns this touch. Left to build into an episode, dismissing
+          // the menu would also poke the pet a moment later.
+          TouchSampler::abortEpisode();
+#endif
           uint16_t touchX = 0;
           uint16_t touchY = 0;
           if (getTouchPoint(_tft, &touchX, &touchY)) {
@@ -191,6 +247,9 @@ class Scene_PetTotoro : public GameScene {
           return;
         }
         if (isTouching && !wasTouching) {
+#if defined(TINYML_GESTURE_INFERENCE)
+          TouchSampler::abortEpisode();
+#endif
           uint16_t touchX = 0;
           uint16_t touchY = 0;
           if (getTouchPoint(_tft, &touchX, &touchY)) {
@@ -227,12 +286,50 @@ class Scene_PetTotoro : public GameScene {
       updateSoot(now);
       refillPetSession(now);
 
+#if defined(TINYML_GESTURE_INFERENCE)
+      // Something is waiting to be classified. A tap in one spot is offered as soon
+      // as the finger lifts; anything that travelled waits out the gap window, which
+      // is why the instant reactions - dragging, the Home button - never go through
+      // the model.
+      //
+      // Neither is gated on petPressed: a tap is offered ~48 ms after the finger
+      // lifts, which can beat the release handling further down this same tick, and
+      // gating on it there threw the gesture away instead of delaying it.
+      if (TouchSampler::previewReady()) {
+        const GestureEpisode &ep = TouchSampler::episode();
+        if (!dragging && !dropping) {
+          handleGesture(ep, now);
+          previewActedStartMs = ep.startMs;
+          havePreviewActed = true;
+        }
+        TouchSampler::consumePreview();
+      }
+      if (TouchSampler::episodeReady()) {
+        const GestureEpisode &ep = TouchSampler::episode();
+        // A single tap that was already acted on when the finger lifted arrives here
+        // a second time once its window expires with no follow-up tap. Nothing new
+        // has been learned about it, so it must not be acted on twice. A second tap
+        // would have made this a two-stroke episode, which is a different gesture and
+        // does get its own reaction.
+        const bool alreadyActed = havePreviewActed && ep.strokeCount == 1 &&
+                                  ep.startMs == previewActedStartMs;
+        if (!dragging && !dropping && !alreadyActed) {
+          handleGesture(ep, now);
+        }
+        havePreviewActed = false;
+        TouchSampler::consumeEpisode();
+      }
+#endif
+
       uint16_t touchX = 0;
       uint16_t touchY = 0;
       bool havePoint = isTouching && getTouchPoint(_tft, &touchX, &touchY);
       if (isTouching && !wasTouching) {
         if (havePoint) {
           if (tryCleanSoot(touchX, touchY)) {
+#if defined(TINYML_GESTURE_INFERENCE)
+            TouchSampler::abortEpisode();  // that touch was aimed at the soot
+#endif
             wasTouching = isTouching;
             requestRender();
             return;
@@ -242,14 +339,48 @@ class Scene_PetTotoro : public GameScene {
           }
         }
       } else if (petPressed && havePoint) {
+#if defined(TINYML_GESTURE_INFERENCE)
+        // Path length, not displacement: a brush that strokes back and forth over the
+        // same spot ends up near where it started, and would read as a hold.
+        {
+          const float dx = (float)((int16_t)touchX - pressLastX);
+          const float dy = (float)((int16_t)touchY - pressLastY);
+          pressTravelPx += sqrtf(dx * dx + dy * dy);
+          pressLastX = (int16_t)touchX;
+          pressLastY = (int16_t)touchY;
+        }
+        if (!dragging) {
+          if (!holdArmed) {
+            if ((now - pressStartMs) >= PET_GRAB_HOLD_MS &&
+                pressTravelPx < PET_GRAB_MAX_TRAVEL_PX) {
+              armHold(touchX, touchY);
+            }
+          } else if (abs((int16_t)touchX - holdAnchorX) >= PET_CARRY_BREAK_PX ||
+                     abs((int16_t)touchY - holdAnchorY) >= PET_CARRY_BREAK_PX) {
+            startDrag();  // moved on after the hold: carry it instead
+          }
+        }
+#endif
         updateDrag(touchX, touchY);
       } else if (petPressed && !isTouching) {
         if (dragging && dragReleaseTicks < PET_DRAG_RELEASE_TICKS) {
           dragReleaseTicks++;
         } else if (releasePress(now)) {
+#if defined(TINYML_GESTURE_INFERENCE)
+          if (holdArmed) {
+            holdArmed = false;
+            openMenu();  // held still and let go, rather than moving on to carry
+            wasTouching = isTouching;
+            return;
+          }
+          // Any shorter press is the classifier's to interpret: one poke gets
+          // Totoro's attention, two get a greeting. Acting here would fire first and
+          // every time, so the release does nothing but let go.
+#else
           openMenu();  // pressed and let go without moving: still a tap
           wasTouching = isTouching;
           return;
+#endif
         }
       }
 
@@ -268,6 +399,9 @@ class Scene_PetTotoro : public GameScene {
       if (pet.avatar != NULL) {
         pet.avatar->updatePos(now);
         clampPet(pet);
+#if defined(TINYML_GESTURE_INFERENCE)
+        updateWalkTarget(pet, now);  // stop on the commanded spot, if any
+#endif
         if (dropping) {
           settleDrop(pet, now);
         }
@@ -308,6 +442,11 @@ class Scene_PetTotoro : public GameScene {
       dragging = false;
       dropping = false;
       dragReleaseTicks = 0;
+#if defined(TINYML_GESTURE_INFERENCE)
+      hasWalkTarget = false;
+      havePreviewActed = false;
+      holdArmed = false;
+#endif
       petSession = PET_PET_MAX_SESSION;
       petCooldownUntilMs = 0;
       rewardToastUntilMs = 0;
@@ -424,6 +563,10 @@ class Scene_PetTotoro : public GameScene {
     unsigned long unhappySinceMs = 0;
 
     bool menuOpen = false;
+    // Care suggestion for the open menu, and the ring icon it highlights (-1 for
+    // none). Refreshed by openMenu().
+    CarePrediction careHint = {CARE_ACTION_PLAY, 0.0f, false};
+    int hintedMenuItem = -1;
     bool playOpen = false;
     int petSession = PET_PET_MAX_SESSION;
     unsigned long petCooldownUntilMs = 0;
@@ -439,6 +582,37 @@ class Scene_PetTotoro : public GameScene {
     int16_t pressStartY = 0;
     int16_t grabOffsetX = 0;  // pet position minus touch position at grab time
     int16_t grabOffsetY = 0;
+
+#if defined(TINYML_GESTURE_INFERENCE)
+    // Walking to a commanded spot rather than wandering. Fleeing uses the same
+    // machinery but sits down facing the wall on arrival instead of standing.
+    bool hasWalkTarget = false;
+    bool walkTargetFlee = false;
+    bool walkTargetRight = false;
+    int16_t walkTargetX = 0;
+
+    // Which tap was already reacted to on lift, so the same tap arriving again as a
+    // closed episode is recognised and ignored.
+    bool havePreviewActed = false;
+    unsigned long previewActedStartMs = 0;
+
+    // A hold that has been recognised but not yet resolved into either the menu (let
+    // go) or a carry (move on). The anchor is where the finger was when it armed, not
+    // where it first landed, so a hold that drifted slowly does not instantly count
+    // as having moved.
+    bool holdArmed = false;
+    int16_t holdAnchorX = 0;
+    int16_t holdAnchorY = 0;
+
+    // How long this press has lasted and how far it has wandered, measured from the
+    // scene's own touch reads rather than from TouchSampler. The menu hangs off these,
+    // and it must not be possible to lose it to a press too light for the fast
+    // sampler's engage threshold - which would leave the pet with no menu at all.
+    unsigned long pressStartMs = 0;
+    float pressTravelPx = 0.0f;
+    int16_t pressLastX = 0;
+    int16_t pressLastY = 0;
+#endif
 
     // Eating animation state (a food bought in the grocery is attached to the
     // Totoro avatar and chewed through 3 frames before its effect is applied).
@@ -991,16 +1165,45 @@ class Scene_PetTotoro : public GameScene {
       petPressed = true;
       dragging = false;
       dragReleaseTicks = 0;
+#if defined(TINYML_GESTURE_INFERENCE)
+      holdArmed = false;
+      pressStartMs = millis();
+      pressTravelPx = 0.0f;
+      pressLastX = (int16_t)touchX;
+      pressLastY = (int16_t)touchY;
+#endif
       pressStartX = (int16_t)touchX;
       pressStartY = (int16_t)touchY;
       grabOffsetX = (int16_t)a->x - (int16_t)touchX;
       grabOffsetY = (int16_t)a->y - (int16_t)touchY;
     }
 
+#if defined(TINYML_GESTURE_INFERENCE)
+    // The hold has been recognised. Nothing visible happens yet - what it means
+    // depends on whether the finger now leaves or moves - so a short blip is the
+    // acknowledgement, without which a hold would feel ignored until release.
+    void armHold(uint16_t touchX, uint16_t touchY) {
+      holdArmed = true;
+      holdAnchorX = (int16_t)touchX;
+      holdAnchorY = (int16_t)touchY;
+      // This contact belongs to the live tier from here on, whichever way it goes.
+      TouchSampler::abortEpisode();
+      addSound(NOTE_E4, noteDurationMs(32, 700));
+    }
+#endif
+
     void startDrag() {
       Pet &p = pets[0];
       dragging = true;
       dropping = false;
+#if defined(TINYML_GESTURE_INFERENCE)
+      holdArmed = false;
+      // This contact belongs to the live tier now. Without this the classifier
+      // would also get it once the finger lifted and fire a second behaviour on
+      // top of the drag.
+      TouchSampler::abortEpisode();
+      hasWalkTarget = false;
+#endif
       p.avatar->setVelocity(0, 0);
       // Held up with its arms out, and it keeps that pose until it is let go.
       p.pose = TOTORO_POSE_DANCE;
@@ -1016,12 +1219,22 @@ class Scene_PetTotoro : public GameScene {
       }
       dragReleaseTicks = 0;
       if (!dragging) {
+#if defined(TINYML_GESTURE_INFERENCE)
+        // Travel alone must not start a drag here. Picking Totoro up the moment the
+        // finger moved 6 px meant every stroke that began on the pet was claimed as a
+        // drag before the classifier ever saw it - so a swipe *was* a drag, and a
+        // long press only did what a short one already did. A hold is now the one way
+        // to pick it up, which leaves a stroke across the pet free to be a swipe or a
+        // brush.
+        return;
+#else
         int16_t dx = (int16_t)touchX - pressStartX;
         int16_t dy = (int16_t)touchY - pressStartY;
         if (abs(dx) < PET_DRAG_THRESHOLD && abs(dy) < PET_DRAG_THRESHOLD) {
           return;  // hasn't moved enough yet - could still be a tap
         }
         startDrag();
+#endif
       }
 
       // The pet keeps the spot on its body that was grabbed under the finger.
@@ -1072,6 +1285,229 @@ class Scene_PetTotoro : public GameScene {
       restPose(p, now);
     }
 
+#if defined(TINYML_GESTURE_INFERENCE)
+
+    // ---- Gesture-driven behaviour -------------------------------------------
+
+    // Hold one pose for a while instead of the usual random cycling. Expressed as
+    // a pose deadline rather than a separate "commanded" flag so that hunger and
+    // sickness still take precedence, exactly as they do over an idle pose.
+    void commandPose(unsigned long now, TotoroPose pose, int region,
+                     unsigned long holdMs) {
+      Pet &p = pets[0];
+      if (p.avatar == NULL || PetTotoroState::isSick()) {
+        // updatePose leaves a sick pet alone entirely, so a pose forced on it here
+        // would be held for good rather than for holdMs.
+        return;
+      }
+      hasWalkTarget = false;
+      p.pose = pose;
+      p.avatar->setVelocity(0, 0);
+      p.poseFrameB = false;
+      p.poseFrameMs = now;
+      setMirrored(p, false);
+      // The expressive regions only exist on the baby and adult sheets.
+      applyPoseFrame(p, p.hasEyes ? region : TOTORO_RGN_STAND);
+      p.nextPoseMs = now + holdMs;
+      p.avatar->requestRedraw();
+    }
+
+    // Poked: stop, stand up, look at whoever did it. Deliberately no stat change -
+    // petting is the action that buys happiness, and a free tap that raised it
+    // would make every other care action pointless.
+    void petAttention(unsigned long now, int16_t towardX) {
+      Pet &p = pets[0];
+      if (p.avatar == NULL) {
+        return;
+      }
+      commandPose(now, TOTORO_POSE_STAND, TOTORO_RGN_STAND, PET_ATTENTION_HOLD_MS);
+      setMirrored(p, towardX > (int16_t)(p.avatar->x + p.avatar->width / 2));
+      addSound(NOTE_E5, noteDurationMs(20, 900));
+      addSound(NOTE_A5, noteDurationMs(20, 900));
+    }
+
+    // Walk to a spot and stop there, rather than the usual wall-to-wall wander.
+    void walkTo(int16_t destX, unsigned long now, bool flee) {
+      Pet &p = pets[0];
+      if (p.avatar == NULL || PetTotoroState::isSick()) {
+        return;  // a sick pet stays where it is, as it does for every other pose
+      }
+
+      const float maxX = (float)PET_WALK_MAX_X - p.avatar->width;
+      if (destX < PET_WALK_MIN_X) {
+        destX = PET_WALK_MIN_X;
+      }
+      if ((float)destX > maxX) {
+        destX = (int16_t)maxX;
+      }
+
+      walkTargetX = destX;
+      walkTargetFlee = flee;
+      // Which way it ends up facing. For a flee that is the wall it is heading for,
+      // not the direction it travels, so that being swiped toward the wall it is
+      // already standing at still turns its back on you.
+      walkTargetRight = flee ? (destX >= (int16_t)maxX) : ((float)destX > p.avatar->x);
+      hasWalkTarget = true;
+
+      if (fabs(p.avatar->x - (float)destX) <= PET_WALK_ARRIVE_PX) {
+        arriveAtTarget(p, now);  // poked where it already stands
+        return;
+      }
+
+      p.pose = TOTORO_POSE_WALK;
+      const float speed = flee ? PET_FLEE_SPEED : PET_WALK_TO_SPEED;
+      p.avatar->setVelocity(walkTargetRight ? speed : -speed, 0);
+      setMirrored(p, walkTargetRight);
+      p.poseFrameB = false;
+      p.poseFrameMs = now;
+      applyPoseFrame(p, TOTORO_RGN_WALK_A);
+      // Far enough out that the idle timer cannot interrupt the walk; arriving
+      // sets its own, shorter deadline.
+      p.nextPoseMs = now + 12000;
+    }
+
+    void updateWalkTarget(Pet &p, unsigned long now) {
+      if (!hasWalkTarget || p.avatar == NULL) {
+        return;
+      }
+      // Hunger, sickness or a newer command took the pose over: the errand is off.
+      if (p.pose != TOTORO_POSE_WALK) {
+        hasWalkTarget = false;
+        return;
+      }
+
+      const float remaining = (float)walkTargetX - p.avatar->x;
+      const bool overshot = walkTargetRight ? (remaining <= 0.0f) : (remaining >= 0.0f);
+      if (fabs(remaining) > PET_WALK_ARRIVE_PX && !overshot) {
+        return;
+      }
+      arriveAtTarget(p, now);
+    }
+
+    void arriveAtTarget(Pet &p, unsigned long now) {
+      hasWalkTarget = false;
+      p.avatar->setPos((float)walkTargetX, p.avatar->y);
+      p.avatar->setVelocity(0, 0);
+
+      if (walkTargetFlee) {
+        // Sulking in the corner with its back to the room. SIT_SIDE faces left
+        // unmirrored, so facing away means mirroring only at the right-hand wall.
+        p.pose = TOTORO_POSE_SIT;
+        setMirrored(p, walkTargetRight);
+        applyPoseFrame(p, p.hasEyes ? TOTORO_RGN_SIT_SIDE : TOTORO_RGN_SIT);
+        p.nextPoseMs = now + PET_SULK_HOLD_MS;
+        addSound(NOTE_A3, noteDurationMs(24, 600));
+      } else {
+        p.pose = TOTORO_POSE_STAND;
+        setMirrored(p, false);
+        applyPoseFrame(p, TOTORO_RGN_STAND);
+        p.nextPoseMs = now + PET_ATTENTION_HOLD_MS;
+      }
+      p.avatar->requestRedraw();
+    }
+
+    // Swiped off: trots to the far wall and sulks there. No happiness penalty -
+    // the gesture says "go away", and stats already fall on their own when the pet
+    // is left alone, so charging for it would punish the player twice.
+    void sendAway(bool right, unsigned long now) {
+      Pet &p = pets[0];
+      if (p.avatar == NULL) {
+        return;
+      }
+      const int16_t dest =
+          right ? (int16_t)((float)PET_WALK_MAX_X - p.avatar->width) : (int16_t)PET_WALK_MIN_X;
+      walkTo(dest, now, true);
+      addSound(NOTE_D4, noteDurationMs(24, 700));
+    }
+
+    void commandDance(unsigned long now) {
+      commandPose(now, TOTORO_POSE_DANCE, TOTORO_RGN_DANCE, PET_DANCE_HOLD_MS);
+      addSound(NOTE_C5, noteDurationMs(24, 900));
+      addSound(NOTE_E5, noteDurationMs(24, 900));
+      addSound(NOTE_G5, noteDurationMs(24, 900));
+    }
+
+    // True when the gesture was aimed at Totoro. Both the centroid and the first
+    // point count, because a brush wanders off the body and a swipe deliberately
+    // ends far from where it started.
+    bool gestureHitPet(const GestureEpisode &ep, int16_t centroidX, int16_t centroidY) {
+      if (tapOnPet((uint16_t)centroidX, (uint16_t)centroidY)) {
+        return true;
+      }
+      if (ep.sampleCount == 0) {
+        return false;
+      }
+      return tapOnPet((uint16_t)ep.samples[0].x, (uint16_t)ep.samples[0].y);
+    }
+
+    // Every gesture here is something Totoro does in the room. None of them opens a
+    // modal overlay, deliberately: the menu is on a hold, handled live, so that the
+    // one interaction the player cannot work around does not depend on the model
+    // reading a gesture correctly.
+    void handleGesture(const GestureEpisode &ep, unsigned long now) {
+      GesturePrediction gesture = GesturePredictor::classify(ep);
+      if (!gesture.recognised) {
+        return;  // unknown, or not confident enough to be worth acting on
+      }
+
+      int16_t gx = 0;
+      int16_t gy = 0;
+      gestureEpisodeCentroid(ep, &gx, &gy);
+      const bool onPet = gestureHitPet(ep, gx, gy);
+
+      switch (gesture.label) {
+        case GESTURE_DOUBLE_POKE:
+          if (onPet) {
+            // The first tap already got its own reaction, so Totoro is looking at
+            // you by now and the greeting lands on top of that.
+            showGreeting(now);
+          }
+          break;
+
+        case GESTURE_POKE:
+          if (onPet) {
+            petAttention(now, gx);
+          } else if (pets[0].avatar != NULL) {
+            // Aim to stand on the spot that was poked, not to put its left edge
+            // there.
+            walkTo((int16_t)(gx - (int16_t)(pets[0].avatar->width / 2)), now, false);
+          }
+          break;
+
+        case GESTURE_BRUSH:
+          if (onPet) {
+            doPet();  // silently a no-op once the petting session is used up
+            // Wiggle first, speech bubble second: the bubble is drawn immediately
+            // and sits just above the pet, so it wants to be the last thing down.
+            commandPose(now, TOTORO_POSE_DANCE, TOTORO_RGN_DANCE, PET_PETTED_HOLD_MS);
+            showLoveMessage();
+          }
+          break;
+
+        case GESTURE_SWIPE:
+          if (onPet) {
+            sendAway(gestureEpisodeNetDx(ep) >= 0, now);
+          }
+          break;
+
+        case GESTURE_CIRCLE:
+        case GESTURE_ZIGZAG:
+          commandDance(now);
+          break;
+
+        case GESTURE_LONG_PRESS:
+          // Never arrives: a hold on Totoro is claimed by the live tier, which
+          // aborts the episode. A hold on empty floor means nothing.
+          break;
+
+        default:
+          break;
+      }
+
+      requestRender();
+    }
+#endif  // TINYML_GESTURE_INFERENCE
+
     // Put the pet back down wherever it is: used when an overlay takes over
     // mid-drag, so it never stays frozen in the air.
     void cancelDrag() {
@@ -1079,6 +1515,10 @@ class Scene_PetTotoro : public GameScene {
       dragging = false;
       dropping = false;
       dragReleaseTicks = 0;
+#if defined(TINYML_GESTURE_INFERENCE)
+      hasWalkTarget = false;
+      holdArmed = false;
+#endif
       Pet &p = pets[0];
       if (p.avatar != NULL) {
         p.avatar->setVelocity(0, 0);
@@ -1144,6 +1584,24 @@ class Scene_PetTotoro : public GameScene {
       return true;
     }
 
+    // Which ring icon a care action points at. Info and Settings are not care
+    // actions, so they are never suggested.
+    static int menuItemForCareAction(CareAction action) {
+      switch (action) {
+        case CARE_ACTION_EAT: return PET_MENU_EAT;
+        case CARE_ACTION_PLAY: return PET_MENU_PLAY;
+        case CARE_ACTION_PET: return PET_MENU_PET;
+        case CARE_ACTION_BATH: return PET_MENU_BATHE;
+        default: return -1;
+      }
+    }
+
+    // Ask on every open rather than caching: stats drift while the menu is shut.
+    void refreshCareHint() {
+      careHint = CareActionPredictor::predict(MLDataLogger::buildHubSample());
+      hintedMenuItem = menuItemForCareAction(careHint.action);
+    }
+
     void drawMenuIcon(int i) {
       int16_t ix = 0, iy = 0;
       getIconPos(i, &ix, &iy);
@@ -1152,6 +1610,13 @@ class Scene_PetTotoro : public GameScene {
       uint16_t textColor = enabled ? TFT_WHITE : rgb565(150, 155, 150);
       _tft->fillCircle(ix, iy, PET_MENU_ICON_RADIUS, color);
       _tft->drawCircle(ix, iy, PET_MENU_ICON_RADIUS, rgb565(18, 22, 18));
+      if (i == hintedMenuItem) {
+        // Two rings just outside the icon; the 26px gap between neighbours
+        // leaves room for them without touching the next icon.
+        uint16_t ring = rgb565(255, 235, 120);
+        _tft->drawCircle(ix, iy, PET_MENU_ICON_RADIUS + 2, ring);
+        _tft->drawCircle(ix, iy, PET_MENU_ICON_RADIUS + 3, ring);
+      }
       _tft->setTextDatum(MC_DATUM);
       _tft->setTextColor(textColor, color);
       _tft->drawString(menuLabel(i), ix, iy, 2);
@@ -1189,6 +1654,7 @@ class Scene_PetTotoro : public GameScene {
     void openMenu() {
       menuOpen = true;
       playOpen = false;
+      refreshCareHint();
       cancelDrag();  // the menu is modal, so never leave the pet hanging mid-air
       repaintRoom();
       drawMenu();
@@ -1265,7 +1731,7 @@ class Scene_PetTotoro : public GameScene {
 
     // ---- Play sub-menu (game picker) ---------------------------------------
 
-    static const int PET_PLAY_GAME_COUNT = 4;
+    static const int PET_PLAY_GAME_COUNT = 7;
 
     const char *playGameLabel(int i) {
       switch (i) {
@@ -1273,6 +1739,9 @@ class Scene_PetTotoro : public GameScene {
         case 1: return "Tic-Tac-Toe";
         case 2: return "Whack-a-Mole";
         case 3: return "Cat Bus Cross";
+        case 4: return "Slide Puzzle";
+        case 5: return "Klotski";
+        case 6: return "Four in a Row";
       }
       return "";
     }
@@ -1283,6 +1752,9 @@ class Scene_PetTotoro : public GameScene {
         case 1: return SCENE_TIC_TAC_TOE;
         case 2: return SCENE_WHACK_A_MOLE;
         case 3: return SCENE_CAT_BUS_CROSS;
+        case 4: return SCENE_SLIDE_PUZZLE;
+        case 5: return SCENE_KLOTSKI;
+        case 6: return SCENE_CONNECT_FOUR;
       }
       return SCENE_PET_TOTORO;
     }
@@ -1293,26 +1765,47 @@ class Scene_PetTotoro : public GameScene {
         case 1: return rgb565(90, 160, 200);
         case 2: return rgb565(150, 120, 200);
         case 3: return rgb565(220, 120, 80);
+        case 4: return rgb565(110, 175, 130);
+        case 5: return rgb565(180, 140, 90);
+        case 6: return rgb565(140, 185, 70);
       }
       return rgb565(120, 120, 120);
     }
 
+    // The panel, in one place so the layout below and the tap-outside-to-dismiss
+    // test in handlePlayTouch() cannot disagree about where its edges are.
+    void playPanelRect(int16_t *x, int16_t *y, int16_t *w, int16_t *h) {
+      *x = 10;
+      *y = 60;
+      *w = SCREENWIDTH - 20;
+      *h = 250;
+    }
+
+    // Two columns, filled left to right. One column would need buttons too short
+    // to read, and the widest label ("Cat Bus Cross") needs ~87px, which is what
+    // sets the 104px column width. An odd game out sits centred on its own row.
     void playButtonRect(int i, int16_t *x, int16_t *y, int16_t *w, int16_t *h) {
-      *x = 40;
-      *w = SCREENWIDTH - 80;
+      *w = 104;
       *h = 34;
-      *y = 98 + i * (*h + 8);
+      *y = 102 + (i / 2) * (*h + 6);
+      bool aloneOnRow = (i == PET_PLAY_GAME_COUNT - 1) && (i % 2 == 0);
+      if (aloneOnRow) {
+        *x = (SCREENWIDTH - *w) / 2;
+      } else {
+        *x = (i % 2 == 0) ? 12 : 124;
+      }
     }
 
     void backButtonRect(int16_t *x, int16_t *y, int16_t *w, int16_t *h) {
       *w = 120;
-      *h = 34;
+      *h = 32;
       *x = (SCREENWIDTH - *w) / 2;
-      *y = 278;
+      *y = 264;
     }
 
     void drawPlayMenu() {
-      int16_t px = 20, py = 66, pw = SCREENWIDTH - 40, ph = 236;
+      int16_t px, py, pw, ph;
+      playPanelRect(&px, &py, &pw, &ph);
       _tft->fillRoundRect(px, py, pw, ph, 12, rgb565(18, 22, 18));
       _tft->drawRoundRect(px, py, pw, ph, 12, rgb565(90, 110, 90));
 
@@ -1327,7 +1820,7 @@ class Scene_PetTotoro : public GameScene {
         _tft->fillRoundRect(x, y, w, h, 8, c);
         _tft->drawRoundRect(x, y, w, h, 8, rgb565(20, 24, 20));
         _tft->setTextColor(TFT_WHITE, c);
-        _tft->drawString(playGameLabel(i), SCREENWIDTH / 2, y + h / 2, 2);
+        _tft->drawString(playGameLabel(i), x + w / 2, y + h / 2, 2);
       }
 
       int16_t bx, by, bw, bh;
@@ -1364,13 +1857,48 @@ class Scene_PetTotoro : public GameScene {
       }
 
       // Tap outside the panel dismisses to the room.
-      int16_t px = 20, py = 66, pw = SCREENWIDTH - 40, ph = 236;
+      int16_t px, py, pw, ph;
+      playPanelRect(&px, &py, &pw, &ph);
       if (!inRect(tx, ty, px, py, pw, ph)) {
         closeOverlays();
       }
     }
 
     // Pick a random sweet nothing and pop it in a speech bubble above Totoro.
+#if defined(TINYML_GESTURE_INFERENCE)
+    // Double-poked: Totoro says hello. Shares the one speech bubble with the love
+    // note, so the two can never overlap on screen.
+    void showGreeting(unsigned long now) {
+      static const char *const kGreetings[] = {
+        "Hi there, how are you",
+        "How are you doing",
+        "Totoro loves you",
+        "Hello, hello!",
+        "Nice to see you",
+        "I missed you today",
+        "Hope your day is good",
+        "Totoro is happy now",
+      };
+      const int count = sizeof(kGreetings) / sizeof(kGreetings[0]);
+      // Stand up and look pleased first: the bubble sits just above the pet, so it
+      // wants to be the last thing drawn.
+      commandPose(now, TOTORO_POSE_STAND, TOTORO_RGN_STAND, PET_ATTENTION_HOLD_MS);
+      addSound(NOTE_G5, noteDurationMs(16, 900));
+      addSound(NOTE_E5, noteDurationMs(16, 900));
+      addSound(NOTE_G5, noteDurationMs(16, 900));
+      showSpeech(kGreetings[random(0, count)]);
+    }
+#endif
+
+    // Puts a line in the bubble and draws it. Callers pick their own sounds so a
+    // greeting and a love note still sound different.
+    void showSpeech(const char *msg) {
+      strncpy(speechText, msg, sizeof(speechText) - 1);
+      speechText[sizeof(speechText) - 1] = '\0';
+      speechUntilMs = millis() + PET_SPEECH_HOLD_MS;
+      drawSpeechBubble();
+    }
+
     void showLoveMessage() {
       static const char *const kLoveLines[] = {
         "I love you",
@@ -1387,17 +1915,15 @@ class Scene_PetTotoro : public GameScene {
         "Love you more",
       };
       const int count = sizeof(kLoveLines) / sizeof(kLoveLines[0]);
-      const char *msg = kLoveLines[random(0, count)];
-      strncpy(speechText, msg, sizeof(speechText) - 1);
-      speechText[sizeof(speechText) - 1] = '\0';
-      speechUntilMs = millis() + 3500;
       addSound(NOTE_E5, noteDurationMs(16, 900));
       addSound(NOTE_G5, noteDurationMs(16, 900));
       addSound(NOTE_C6, noteDurationMs(16, 900));
-      drawSpeechBubble();
+      showSpeech(kLoveLines[random(0, count)]);
     }
 
     // A rounded speech bubble with a little downward tail, floated above the pet.
+    // Wraps onto a second line when one line would be wider than the screen, which
+    // is what lets a greeting be a whole sentence instead of two words.
     void drawSpeechBubble() {
       if (speechText[0] == '\0') {
         return;
@@ -1406,13 +1932,24 @@ class Scene_PetTotoro : public GameScene {
       uint16_t border = rgb565(70, 74, 70);
       uint16_t ink = rgb565(210, 60, 110);
 
-      int16_t textW = _tft->textWidth(speechText, 2);
+      const int16_t maxBw = SCREENWIDTH - 16;
+      char line1[sizeof(speechText)];
+      char line2[sizeof(speechText)];
+      splitSpeechLines(line1, line2, sizeof(line1), maxBw - 26);
+
+      int16_t textW = _tft->textWidth(line1, 2);
+      if (line2[0] != '\0') {
+        const int16_t w2 = _tft->textWidth(line2, 2);
+        if (w2 > textW) textW = w2;
+      }
       int16_t bw = textW + 26;
-      if (bw > SCREENWIDTH - 16) bw = SCREENWIDTH - 16;
+      if (bw > maxBw) bw = maxBw;
       if (bw < 90) bw = 90;
-      int16_t bh = 34;
+      const int16_t lineH = 18;
+      int16_t bh = (line2[0] != '\0') ? (34 + lineH) : 34;
       int16_t bx = (SCREENWIDTH - bw) / 2;
-      int16_t by = 150;
+      // Grow upward, so the tail stays pinned just above Totoro's head.
+      int16_t by = 184 - bh;
 
       _tft->fillRoundRect(bx, by, bw, bh, 8, paper);
       _tft->drawRoundRect(bx, by, bw, bh, 8, border);
@@ -1425,8 +1962,54 @@ class Scene_PetTotoro : public GameScene {
 
       _tft->setTextDatum(MC_DATUM);
       _tft->setTextColor(ink, paper);
-      _tft->drawString(speechText, SCREENWIDTH / 2, by + bh / 2, 2);
+      if (line2[0] == '\0') {
+        _tft->drawString(line1, SCREENWIDTH / 2, by + bh / 2, 2);
+      } else {
+        _tft->drawString(line1, SCREENWIDTH / 2, by + bh / 2 - lineH / 2, 2);
+        _tft->drawString(line2, SCREENWIDTH / 2, by + bh / 2 + lineH / 2, 2);
+      }
       _tft->setTextDatum(TL_DATUM);
+    }
+
+    // Breaks speechText at the word boundary that leaves the two halves most even,
+    // among those that let the first half fit. Leaves line2 empty when the whole
+    // string already fits, so short notes keep their single-line bubble.
+    void splitSpeechLines(char *line1, char *line2, size_t cap, int16_t maxTextW) {
+      line1[0] = '\0';
+      line2[0] = '\0';
+      strncpy(line1, speechText, cap - 1);
+      line1[cap - 1] = '\0';
+      if (_tft->textWidth(line1, 2) <= maxTextW) {
+        return;
+      }
+
+      const int len = (int)strlen(speechText);
+      int best = -1;
+      int bestImbalance = 0;
+      for (int i = 0; i < len; i++) {
+        if (speechText[i] != ' ') {
+          continue;
+        }
+        char head[sizeof(speechText)];
+        memcpy(head, speechText, i);
+        head[i] = '\0';
+        if (_tft->textWidth(head, 2) > maxTextW) {
+          break;  // every later break point is wider still
+        }
+        const int imbalance = abs((len - i - 1) - i);
+        if (best < 0 || imbalance < bestImbalance) {
+          best = i;
+          bestImbalance = imbalance;
+        }
+      }
+      if (best < 0) {
+        return;  // one long word: let it be clipped rather than broken mid-word
+      }
+
+      memcpy(line1, speechText, best);
+      line1[best] = '\0';
+      strncpy(line2, speechText + best + 1, cap - 1);
+      line2[cap - 1] = '\0';
     }
 
     void doPet() {

@@ -6,7 +6,9 @@
 
 uint8_t MLDataLogger::sessionGames = 0;
 
-#if defined(TINYML_DATA_LOG)
+// Tracked in every build, not just logging ones: CareActionPredictor has to feed
+// the model the same last-game context the hub rows were trained on, and
+// sessionGames is a feature. Only the Serial output is conditional.
 static int s_lastGameId = 0;
 static GameOutcome s_lastOutcome = GAME_RESULT_NONE;
 static int s_lastScore = 0;
@@ -14,6 +16,7 @@ static int s_lastDifficulty = 0;
 static uint16_t s_lastSessionSec = 0;
 static bool s_hasLastGame = false;
 
+#if defined(TINYML_DATA_LOG)
 static void logEvent(GameplayEventKind kind, int gameId, GameOutcome outcome,
                      int score, int difficulty, uint16_t sessionSeconds) {
   GameplaySample sample = MLDataLogger::buildSample(gameId, outcome);
@@ -63,9 +66,7 @@ void MLDataLogger::printCsvHeader() {
 
 void MLDataLogger::resetSession() {
   sessionGames = 0;
-#if defined(TINYML_DATA_LOG)
   s_hasLastGame = false;
-#endif
 }
 
 #if defined(TINYML_DATA_LOG)
@@ -96,23 +97,26 @@ void MLDataLogger::onCareState() {
 }
 
 void MLDataLogger::onGameEnd(int gameId, GameOutcome outcome, int score, int difficulty, uint16_t sessionSeconds) {
-#if defined(TINYML_DATA_LOG)
   s_lastGameId = gameId;
   s_lastOutcome = outcome;
   s_lastScore = score;
   s_lastDifficulty = difficulty;
   s_lastSessionSec = sessionSeconds;
   s_hasLastGame = true;
-
   sessionGames++;
+
+#if defined(TINYML_DATA_LOG)
   logEvent(GAMEPLAY_EVENT_GAME_END, gameId, outcome, score, difficulty, sessionSeconds);
-#else
-  (void)gameId;
-  (void)outcome;
-  (void)score;
-  (void)difficulty;
-  (void)sessionSeconds;
 #endif
+}
+
+// The feature vector a suggestion at home is made from: current pet stats
+// against the last finished round's context, matching the hub rows in training.
+GameplaySample MLDataLogger::buildHubSample() {
+  if (s_hasLastGame) {
+    return buildSample(s_lastGameId, s_lastOutcome);
+  }
+  return buildSample(SCENE_PET_TOTORO, GAME_RESULT_NONE);
 }
 
 GameplaySample MLDataLogger::buildSample(int gameId, GameOutcome outcome) {

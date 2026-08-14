@@ -2,7 +2,7 @@
 
 A small handheld-style game console running on an ESP32 with a 240x320 ILI9341
 TFT display and an XPT2046 resistive touch panel. A map-style **hub** menu
-launches four mini-games plus a Settings screen with touch calibration.
+launches seven mini-games plus a Settings screen with touch calibration.
 
 ## Scenes
 
@@ -14,6 +14,9 @@ launches four mini-games plus a Settings screen with touch calibration.
 | **Tic-Tac-Toe**            | Play 1P vs. a blocking/winning CPU or 2P hot-seat, on a grass board with Mei/Cat-Bus tokens.                                                                         |
 | **Whack-a-Mole**           | Timed rounds: tap the soot-moles as they pop up across five levels.                                                                                                  |
 | **Cat Bus Cross**          | Frogger-style: hop Mei up five soot-patrolled lanes to the Goal sign, with three attempts per round.                                                                 |
+| **Slide Puzzle**           | The Totoro poster cut into a 3x4 sliding-tile board, freshly scrambled every round. Time Attack gives you 20 s; Normal is untimed but still pays the full purse for a sub-20 s solve. |
+| **Klotski**                | Hua Rong Dao: drag the blocks aside to free Totoro through the gap at the foot of the frame. Three fixed boards - easy, medium and the classic 116-step Hengdao Lima - and beating half again as many steps as a perfect solve pays a bonus. |
+| **Four in a Row**          | Connect Four on the lime green Ghibli board: tap a column and a white Totoro or a soot sprite drops down it. 1P against a searching CPU on easy or hard, or 2P hot seat. |
 | **Coin Reward**            | Shared payout screen. Every mini-game exits through it, banking and announcing the coins earned before returning home.                                               |
 | **Settings**               | Touch calibration (see below).                                                                                                                                       |
 

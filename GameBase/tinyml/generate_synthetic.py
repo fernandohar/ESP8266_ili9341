@@ -25,55 +25,44 @@ LABELS = ["eat", "play", "pet", "bath"]
 # Bands where PetSim steepens the happiness slide, so they outrank the ranking.
 CRITICAL_HUNGER = 0.15
 CRITICAL_CLEAN = 0.10
-# Care targets each ranked stat is measured against.
-TARGET_HUNGER = 0.80
-TARGET_CLEAN = 0.80
-TARGET_HAPPY = 0.80
-# Excitement bars for the play-or-pet choice: bored, and the all-good bar.
+# Excitement bar that picks between the two ways to raise happiness.
 BORED_EXCITEMENT = 0.40
-ALL_GOOD_EXCITEMENT = 0.80
 # A round's hunger/cleanness cost plus CARE_PLAY_COST_MARGIN.
 PLAY_HUNGER_MIN = 0.18
 PLAY_CLEAN_MIN = 0.16
 HAPPY_UNHAPPY = 0.15
-
-
-def deficit_pct(value: float, target: float) -> float:
-    """Percent short of a care target; 0 at or above it."""
-    if target <= 0 or value >= target:
-        return 0.0
-    return (target - value) * 100.0 / target
+# Where "every stat is healthy" starts, for boundary sampling only — the rule
+# itself no longer compares against a target.
+HEALTHY_STAT = 0.80
 
 
 def can_afford_play(row: dict) -> bool:
     return row["hunger"] > PLAY_HUNGER_MIN and row["clean"] > PLAY_CLEAN_MIN
 
 
-def play_or_pet(row: dict, bored_bar: float) -> str:
-    if row["excitement"] < bored_bar and can_afford_play(row):
+def play_or_pet(row: dict) -> str:
+    if row["excitement"] < BORED_EXCITEMENT and can_afford_play(row):
         return "play"
     return "pet"
 
 
 def suggest(row: dict) -> str:
-    """Rule oracle in Python — must match CareActionRules.h."""
+    """Rule oracle in Python — must match CareActionRules.h.
+
+    Serves the lowest of the three visible stats; ties go to hunger, then
+    cleanness, in the order they drain.
+    """
     if row["hunger"] < CRITICAL_HUNGER:
         return "eat"
     if row["clean"] < CRITICAL_CLEAN:
         return "bath"
 
-    hunger_gap = deficit_pct(row["hunger"], TARGET_HUNGER)
-    clean_gap = deficit_pct(row["clean"], TARGET_CLEAN)
-    happy_gap = deficit_pct(row["happy"], TARGET_HAPPY)
-    worst = max(hunger_gap, clean_gap, happy_gap)
-
-    if worst == 0:
-        return play_or_pet(row, ALL_GOOD_EXCITEMENT)
-    if hunger_gap == worst:
+    lowest = min(row["hunger"], row["clean"], row["happy"])
+    if row["hunger"] == lowest:
         return "eat"
-    if clean_gap == worst:
+    if row["clean"] == lowest:
         return "bath"
-    return play_or_pet(row, BORED_EXCITEMENT)
+    return play_or_pet(row)
 
 
 def derive_unhappy(happy: float) -> float:
@@ -98,10 +87,12 @@ def row_near_threshold(np_rng: np.random.Generator, rng: random.Random) -> dict:
     """Sample near a care-rule boundary for better class coverage.
 
     One case per branch of suggest(): the two critical bands, each of the three
-    stats winning the deficit ranking (happiness split by the bored bar), and
-    every target already met.
+    stats reading lowest (happiness split by the bored bar), all three healthy
+    with a clear lowest, and a near-tie between them. The last two are where a
+    model trained on uniform rows guesses worst — the gaps there are a couple of
+    points, so the decision boundary is thin.
     """
-    case = rng.randint(0, 6)
+    case = rng.randint(0, 7)
     row = random_row(rng, np_rng)
 
     if case == 0:  # critical hunger
@@ -126,10 +117,14 @@ def row_near_threshold(np_rng: np.random.Generator, rng: random.Random) -> dict:
             row["excitement"] = float(np_rng.uniform(0.0, BORED_EXCITEMENT))
         else:
             row["excitement"] = float(np_rng.uniform(BORED_EXCITEMENT, 1.0))
-    else:  # every target met
-        row["hunger"] = float(np_rng.uniform(TARGET_HUNGER, 1.0))
-        row["clean"] = float(np_rng.uniform(TARGET_CLEAN, 1.0))
-        row["happy"] = float(np_rng.uniform(TARGET_HAPPY, 1.0))
+    elif case == 6:  # every stat healthy: the lowest one still decides
+        row["hunger"] = float(np_rng.uniform(HEALTHY_STAT, 1.0))
+        row["clean"] = float(np_rng.uniform(HEALTHY_STAT, 1.0))
+        row["happy"] = float(np_rng.uniform(HEALTHY_STAT, 1.0))
+    else:  # near-tie: all three within a few points of each other
+        base = float(np_rng.uniform(0.18, 0.95))
+        for key in ("hunger", "clean", "happy"):
+            row[key] = float(np.clip(base + np_rng.uniform(-0.04, 0.04), 0.02, 1.0))
 
     row["unhappy"] = derive_unhappy(row["happy"])
     return row

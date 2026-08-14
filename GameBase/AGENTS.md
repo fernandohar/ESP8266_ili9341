@@ -156,6 +156,7 @@ handling:
 | `generate_grass_tile.py` | `assets/tictactoe_bg_elements_source.png` → `src/image_grass_tile.h` | Crops a clean 50x50 grass patch and makes it seamless (offset+feather) for use as a *repeating* background tile - far smaller than a full-screen image. See "tiled backgrounds" below. |
 | `generate_ttt_grid.py` | `assets/tictactoe_bg_elements_source.png` → `src/sprite_ttt_grid.h` | Crops the wooden "#" grid and keys out its black background so it overlays as a transparent 210x210 Avatar over the tiled grass. |
 | `generate_catbus_bg.py` | `assets/catbus_cross_concept.png` → `src/image_catbus_cross_bg.h` + `src/sprite_catbus_soot.h` | The source is a two-panel concept sheet whose right panel is the real art, with the soot, Mei, direction arrows and a caption already drawn in. Lifts one soot out as its own sprite (largest non-dirt blob in a lane, which keeps the enclosed white eyes and rejects pebbles), then paints all of them back out of the board. Inpainting copies pixels from the same rows a fixed distance sideways - the board is horizontally stratified, so a shift always lands on matching material - with alpha-feathered edges. The score plate is a flat gradient (one clean column stretched across) and the caption sits on unstratified foliage (mirror-tiled). Pre-quantizes with median cut before encoding: `encode_sheet`'s own reduction is an O(n²) pairwise merge that never finishes on photographic art. |
+| `generate_puzzle_image.py` | `assets/puzzle_totoro_source.png` → `src/image_puzzle_totoro.h` | The slide puzzle's picture. The poster and the 3x4 board are both 2:3, so it resizes to 168x252 with no crop - keeping the title text, which is one of the few landmarks that makes the bottom row placeable. Median-cuts to 256 colours before encoding for the same reason `generate_catbus_bg.py` does. The scene indexes the sheet by tile rather than through regions, so `TILE_W`/`TILE_H` here must stay equal to `PUZZLE_TILE_W`/`PUZZLE_TILE_H` in `src/Scene_SlidePuzzle.h` or every tile shifts. |
 | `generate_ttt_tokens.py` | `assets/ttt_mei_source.png` + `assets/ttt_catbus_source.png` → `src/sprite_ttt_tokens.h` | Crops a square around each character's face and applies a circular alpha mask + coloured ring, giving clean round game tokens (Mei = O, Cat Bus = X) that read over the grass board. Edit the per-token crop boxes/ring colours in `TOKENS`. |
 | `generate_digit_sheet.py` / `generate_letter_sheet.py` / `pack_digit_sheet.py` | procedural / source PNG → glyph headers | Lays out digit/letter glyphs into a sheet. |
 
@@ -293,11 +294,82 @@ and flicker.
   **draw once in `initScene()` and make `render()` a no-op** instead of calling
   `renderFullScreen()` every frame (see `src/Scene_Settings.h`).
 
+### Neither one: paint-on-change
+
+A third option, for a board whose pieces snap between fixed slots instead of
+moving continuously. `Scene_SlidePuzzle` has no avatars and no background at all:
+it blits tiles out of a `SpriteAsset` with `spriteAssetPixelRgb565()` into a
+one-row buffer, pushes them with `_tft->pushImage()`, and repaints only the two
+cells a move actually changed. `render()` is a no-op and every repaint is driven
+from `update()`.
+
+This is the right shape when the pieces are edge-to-edge: `renderScene()` would
+have to repaint each moved sprite's vacated footprint *from the background*, and
+in a gapless grid that background is the neighbouring tiles. Don't "fix" such a
+scene by adding a `renderScene()` call — with hidden or stale avatar positions it
+will repaint over the board.
+
+`Scene_Klotski` paints on change too, and shows the other reason to: its board is
+**entirely primitives** — rounded rects with a bevel, and the goal block drawn as
+Totoro out of two triangles, an ellipse and four circles — so the whole game costs
+nothing in flash. Reach for procedural art whenever a board is flat colour and
+geometry; a converted PNG of the same board would cost tens of KB. The pieces are
+inset 2px inside their cells, which is what makes clearing a vacated cell safe:
+the neighbour pressed against it has no pixels inside the cleared rectangle.
+
+`Scene_ConnectFour` is the same shape again, and shows how far procedural art
+goes: a whole board plus two characters for ~0.4% of flash. The white Totoro is
+two triangles, two circles and a two-line smile; the soot sprite is a circle,
+eight spokes and two eyes. Both are worth mocking up in PIL before trusting them —
+at 26px the first Totoro's ears read as devil horns and its mouth as a grimace,
+which was obvious in a mock and would have been obvious on the panel far later.
+Its falling piece animates by repainting one cell per scene tick, which is all a
+"drop" needs and stays inside the paint-on-change model.
+
+### Puzzles whose difficulty is a measurement, not a guess
+
+Both puzzle scenes keep their difficulty constants honest with a solver in
+`tools/`, and neither number was arrived at by feel:
+
+- `tools/check_slide_puzzle.py` — mirrors the scene's scramble walk and solves
+  samples with IDA*, to set the shuffle depth per mode.
+- `tools/check_klotski.py` — exhaustively BFSes each shipped board and checks the
+  result against the `KLOTSKI_PAR_*` constants, failing with a non-zero exit if
+  they have drifted. It reads the layout art straight out of `Scene_Klotski.h`, so
+  editing a board and rerunning the tool is the whole re-tuning workflow. It also
+  enforces that every letter in the art is a solid rectangle — the scene infers a
+  piece's shape from the bounding box of its letter, so a ragged letter would
+  silently claim cells it does not own.
+
+The classic Klotski board comes out at 116 single-cell steps, which is the
+published figure for Hengdao Lima; that agreement is the cross-check that the
+solver, the layout art and the scene's move rules all mean the same thing.
+
+### Opponents whose strength is a measurement too
+
+`tools/check_connect4.py` mirrors `Scene_ConnectFour`'s negamax against the same
+evaluation — reading the depths, weights and move ordering out of the header — and
+reports the head-to-head record between the shipped easy and hard settings plus
+the peak leaf evaluations per move, which is what decides whether a CPU turn fits
+in a scene tick. Two findings worth keeping:
+
+- **Do not port Tic-Tac-Toe's `AI_MISTAKE_CHANCE` to a connection game.** Making
+  the CPU randomly ignore its own rules works in Tic-Tac-Toe, where a blunder
+  usually only costs the draw. In Four in a Row a single slip hands over the game:
+  measured against a steady reference, one blunder in five dropped the CPU from 25
+  wins in 60 to 7, and one in three to a single win. Difficulty there is search
+  depth, and the CPU should never blunder on purpose.
+- **Prefer even search depths** with an evaluation scored after the side to move
+  has played, or the leaf is always judged straight after the CPU's own move and
+  the search reads as optimistic. Odd depths measurably underperformed the even
+  depth below them.
+
 ### Rule of thumb
 
 > Animate with `renderScene()`. Reach for `renderFullScreen()` only for a
 > deliberate full repaint, and never call it every frame for animation — it is
-> expensive and flickers.
+> expensive and flickers. If the pieces only ever snap between slots, consider
+> painting on change instead of either.
 
 Use `requestRender()` to ask the scene manager for a render on the next tick
 rather than forcing a full-screen repaint yourself.

@@ -10,18 +10,29 @@ Hub rows (event=0) are logged when returning to the pet home *after* game reward
 feed / pet / bath took effect. Both describe the pet while it is at home, so both
 are kept by default; game-end rows (event=1) need --all-events.
 
+The device writes its own `label` column, so a capture taken before a change to
+CareActionRules.h carries labels from the old rule. --relabel replaces them with
+the current oracle instead of re-collecting the session.
+
 Usage:
   python prepare_dataset.py data/raw/sessions.csv
   python prepare_dataset.py data/raw/sessions.csv -o data/processed/real.csv
   python prepare_dataset.py data/raw/sessions.csv --all-events
+  python prepare_dataset.py data/raw/sessions.csv --relabel
 """
 
 from __future__ import annotations
 
 import argparse
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
+
+ML_HEADER = (
+    "ML,ms,event,game_id,outcome,score,difficulty,session_sec,"
+    "hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label"
+)
 
 FEATURES = [
     "hunger",
@@ -41,25 +52,18 @@ HOME_EVENTS = (0, 2)
 # Thresholds mirrored from CareActionRules.h / PetSim.h (0..100 on device).
 CRITICAL_HUNGER = 15
 CRITICAL_CLEAN = 10
-TARGET_HUNGER = 80
-TARGET_CLEAN = 80
-TARGET_HAPPY = 80
 BORED_EXCITEMENT = 40
-ALL_GOOD_EXCITEMENT = 80
 PLAY_HUNGER_MIN = 18  # PET_GAME_PLAY_HUNGER_COST + CARE_PLAY_COST_MARGIN
 PLAY_CLEAN_MIN = 16   # PET_GAME_PLAY_CLEAN_COST + CARE_PLAY_COST_MARGIN
 HAPPY_UNHAPPY = 15
 
 
-def deficit_pct(value: float, target: float) -> float:
-    """Percent short of a care target; 0 at or above it."""
-    if target <= 0 or value >= target:
-        return 0.0
-    return (target - value) * 100.0 / target
-
-
 def suggest_from_features(row: pd.Series) -> str:
-    """Rule oracle in Python — must match CareActionRules.h."""
+    """Rule oracle in Python — must match CareActionRules.h.
+
+    Serves the lowest of the three visible stats; ties go to hunger, then
+    cleanness, in the order they drain.
+    """
     clean = row["clean"] * 100.0 if row["clean"] <= 1.0 else row["clean"]
     hunger = row["hunger"] * 100.0 if row["hunger"] <= 1.0 else row["hunger"]
     happy = row["happy"] * 100.0 if row["happy"] <= 1.0 else row["happy"]
@@ -70,39 +74,33 @@ def suggest_from_features(row: pd.Series) -> str:
     if clean < CRITICAL_CLEAN:
         return "bath"
 
-    hunger_gap = deficit_pct(hunger, TARGET_HUNGER)
-    clean_gap = deficit_pct(clean, TARGET_CLEAN)
-    happy_gap = deficit_pct(happy, TARGET_HAPPY)
-    worst = max(hunger_gap, clean_gap, happy_gap)
+    lowest = min(hunger, clean, happy)
+    if hunger == lowest:
+        return "eat"
+    if clean == lowest:
+        return "bath"
 
     can_play = hunger > PLAY_HUNGER_MIN and clean > PLAY_CLEAN_MIN
-    if worst == 0:
-        return "play" if excitement < ALL_GOOD_EXCITEMENT and can_play else "pet"
-    if hunger_gap == worst:
-        return "eat"
-    if clean_gap == worst:
-        return "bath"
     return "play" if excitement < BORED_EXCITEMENT and can_play else "pet"
 
 
 def load_serial(path: Path) -> pd.DataFrame:
-    text = path.read_text().strip()
-    first_line = text.split("\n", 1)[0]
-    # Captures pasted without a header row start with "ML,<ms>,..."
-    if first_line.startswith("ML,") and not first_line.startswith("ML,ms,"):
-        parts = first_line.split(",")
-        if len(parts) >= 2 and parts[1].isdigit():
-            header = (
-                "ML,ms,event,game_id,outcome,score,difficulty,session_sec,"
-                "hunger,happy,excitement,clean,unhappy,game_id_norm,win,session_games,label"
-            )
-            text = header + "\n" + text
-    from io import StringIO
+    lines = [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
+    if not lines:
+        raise SystemExit(f"{path} is empty")
 
-    return pd.read_csv(StringIO(text))
+    # Narrow CSV: synthetic.csv, or a file already through this script.
+    if not lines[0].startswith("ML,"):
+        return pd.read_csv(path)
+
+    # Wide capture. Sessions appended with `>>` repeat the header row, and a
+    # capture pasted out of the monitor may carry none, so rebuild with one.
+    header = next((ln for ln in lines if ln.startswith("ML,ms,")), ML_HEADER)
+    body = [ln for ln in lines if not ln.startswith("ML,ms,")]
+    return pd.read_csv(StringIO("\n".join([header] + body)))
 
 
-def normalize(df: pd.DataFrame, home_only: bool) -> pd.DataFrame:
+def normalize(df: pd.DataFrame, home_only: bool, relabel: bool = False) -> pd.DataFrame:
     if home_only and "event" in df.columns:
         df = df[df["event"].isin(HOME_EVENTS)].copy()
 
@@ -124,7 +122,7 @@ def normalize(df: pd.DataFrame, home_only: bool) -> pd.DataFrame:
     if missing:
         raise SystemExit(f"Missing feature columns {missing}. Re-flash esp32-tinyml-log firmware.")
 
-    if "label" not in df.columns:
+    if relabel or "label" not in df.columns:
         df["label"] = df.apply(suggest_from_features, axis=1)
 
     df["label"] = df["label"].astype(str).str.strip().str.lower()
@@ -154,10 +152,22 @@ def main() -> None:
         action="store_true",
         help="Keep game-end rows (event=1) as well as the at-home rows",
     )
+    parser.add_argument(
+        "--relabel",
+        action="store_true",
+        help="Replace the device labels with the current rule oracle (use for "
+        "captures taken before CareActionRules.h changed)",
+    )
     args = parser.parse_args()
 
     df = load_serial(args.input)
-    out_df = normalize(df, home_only=not args.all_events)
+    device_labels = None
+    if "label" in df.columns:
+        device_labels = df["label"].astype(str).str.strip().str.lower()
+
+    out_df = normalize(df, home_only=not args.all_events, relabel=args.relabel)
+    if out_df.empty:
+        raise SystemExit("No rows left after filtering; check the capture, or pass --all-events")
 
     out_path = args.output
     if out_path is None:
@@ -167,9 +177,26 @@ def main() -> None:
 
     print(f"Wrote {len(out_df)} rows to {out_path}")
     print(out_df["label"].value_counts())
+
+    if args.relabel:
+        if device_labels is None:
+            print("Capture had no label column; every row was labeled by the rule oracle.")
+            return
+        changed = int((device_labels.reindex(out_df.index) != out_df["label"]).sum())
+        print(
+            f"Relabeled {changed} of {len(out_df)} rows ({changed / len(out_df):.1%}) "
+            "where the device disagreed with the current rule"
+        )
+        return
+
     oracle = out_df.apply(suggest_from_features, axis=1)
-    agree = (oracle == out_df["label"]).mean()
-    print(f"Label agrees with rule oracle on {agree:.1%} of rows")
+    stale = int((oracle != out_df["label"]).sum())
+    print(f"Label agrees with rule oracle on {1 - stale / len(out_df):.1%} of rows")
+    if stale:
+        print(
+            f"{stale} rows were labeled under a different rule — rerun with --relabel "
+            "to replace them"
+        )
 
 
 if __name__ == "__main__":

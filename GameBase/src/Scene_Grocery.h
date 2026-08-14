@@ -11,6 +11,7 @@
 #include "PetTotoroState.h"
 #include "PetSave.h"
 #include "PendingMeal.h"
+#include "GroceryFoods.h"
 #include "image_grass_tile.h"
 #include "image_wood_branch.h"
 #include "sprite_grocery_food.h"
@@ -30,7 +31,6 @@
 //   wood shelf
 //   [Previous][Home][Next]
 
-#define GROCERY_FOOD_COUNT 12
 #define GROCERY_FRAMES_PER_FOOD 3
 #define GROCERY_FRAME_W 24
 #define GROCERY_FRAME_H 24
@@ -44,13 +44,6 @@
 #define GROCERY_FRAME_NEW 0
 #define GROCERY_FRAME_HALF 1
 #define GROCERY_FRAME_EATEN 2
-
-struct GroceryFood {
-  const char *name;
-  int16_t cost;
-  int8_t hunger;
-  int8_t happiness;
-};
 
 class Scene_Grocery : public GameScene {
   public:
@@ -159,21 +152,7 @@ class Scene_Grocery : public GameScene {
     }
 
     const GroceryFood &food(int index) {
-      static const GroceryFood FOODS[GROCERY_FOOD_COUNT] = {
-        {"Broccoli",     5, 15,  -8},
-        {"Green onion", 10, 10, -10},
-        {"Salad",       10, 14,   1},
-        {"Onigiri",     15, 22,   1},
-        {"Yam",         10,  5,   1},
-        {"Bun",         18, 25,   2},
-        {"Hamburger",   22, 35,   2},
-        {"Sushi",       25, 20,   3},
-        {"Ramen",       41, 34,   3},
-        {"Dorayaki",    21, 12,   4},
-        {"Cotton candy",23,  3,   5},
-        {"Soft serve",  26,  6,   5},
-      };
-      return FOODS[index];
+      return groceryFood(index);
     }
 
     static int regionIndex(int foodIndex, int frame) {

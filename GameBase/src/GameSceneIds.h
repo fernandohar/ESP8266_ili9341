@@ -14,5 +14,12 @@
 #define SCENE_GROCERY 6
 #define SCENE_CAT_BUS_CROSS 7
 #define SCENE_COIN_REWARD 8
+#define SCENE_SLIDE_PUZZLE 9
+#define SCENE_KLOTSKI 10
+#define SCENE_CONNECT_FOUR 11
+// Dev-only labelled gesture capture, registered only in the TINYML_GESTURE_LOG
+// build and reachable from Settings. Always appended last, so it keeps the
+// highest index.
+#define SCENE_GESTURE_CAPTURE 12
 
 #endif

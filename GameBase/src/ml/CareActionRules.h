@@ -2,15 +2,10 @@
 #define _CARE_ACTION_RULES_H_
 
 #include "GameplaySample.h"
+#include "GameProgress.h"
+#include "GroceryFoods.h"
 #include "PetSim.h"
 #include "PetTotoroState.h"
-
-// Care target for each stat the oracle ranks. Reusing PetSim's "all good" bar
-// aims the oracle at the state the simulation already rewards with a happiness
-// boost, so "below target" means the same thing in both places.
-#define CARE_TARGET_HUNGER PET_ALL_GOOD_HUNGER
-#define CARE_TARGET_CLEAN PET_ALL_GOOD_CLEAN
-#define CARE_TARGET_HAPPINESS 80
 
 // Excitement sheds PET_EXCITEMENT_DECAY_FRAC of itself per minute, so a full
 // 100 lands here about an hour after the last game: the pet reads as bored.
@@ -23,23 +18,29 @@
 // Rule-based teacher for auto-labeling training data and as an inference fallback
 // when the model is disabled or confidence is low.
 //
-// Serves whichever stat sits furthest below its care target (0..100 scale), and
-// picks the action that raises that stat:
+// Serves whichever of the three visible stats reads lowest (all on the same
+// 0..100 scale) with the action that raises it:
 //
 //   hunger    -> Eat   (a meal is the only thing that refills it)
 //   cleanness -> Bath  (restores it to full)
 //   happiness -> Play when the pet is bored and can afford a round, else Pet
 //
-// Two exceptions to the plain ranking:
-//   * Hunger or cleanness inside the band where statusUpdateTick() steepens the
-//     happiness slide jumps the queue. While a basic need is unmet, lifting
-//     happiness treats the symptom and the drain continues.
-//   * With every target already met there is no deficit to serve, so build
-//     excitement toward the boost bar instead.
+// Comparing raw values rather than shortfalls against a care target means the
+// suggestion keeps tracking the neediest stat even when every stat is healthy —
+// at hunger 94 / clean 88 / happy 100 the answer is a bath, not a distraction.
+// A tie goes to the stat that will fall first: hunger drains faster than
+// cleanness at either growth stage (see the decay rates in PetSim.h), and both
+// outrun the happiness drift.
+//
+// The one exception to the plain ranking: hunger or cleanness inside the band
+// where statusUpdateTick() steepens the happiness slide jumps the queue, even if
+// another stat reads lower. While a basic need is that unmet, lifting happiness
+// treats the symptom and the drain continues.
 //
 // Excitement is deliberately not ranked as a need of its own: it is hidden from
 // the HUD and decays fast enough to sit near zero between games, so ranking it
-// would make Play the answer almost every time.
+// would make Play the answer almost every time. It only picks between the two
+// ways to raise happiness.
 class CareActionRules {
   public:
     static CareAction suggest(const GameplaySample &sample) {
@@ -53,29 +54,41 @@ class CareActionRules {
         return CARE_ACTION_BATH;
       }
 
-      const int hungerGap = deficitPct(s.hunger, CARE_TARGET_HUNGER);
-      const int cleanGap = deficitPct(s.cleanness, CARE_TARGET_CLEAN);
-      const int happyGap = deficitPct(s.happiness, CARE_TARGET_HAPPINESS);
-
-      int worst = hungerGap;
-      if (cleanGap > worst) {
-        worst = cleanGap;
+      int lowest = s.hunger;
+      if (s.cleanness < lowest) {
+        lowest = s.cleanness;
       }
-      if (happyGap > worst) {
-        worst = happyGap;
+      if (s.happiness < lowest) {
+        lowest = s.happiness;
       }
 
-      if (worst == 0) {
-        return playOrPet(s, PET_ALL_GOOD_EXCITEMENT);
-      }
-      // Ties go to the concrete fixes, which feed back into happiness anyway.
-      if (hungerGap == worst) {
+      if (s.hunger == lowest) {
         return CARE_ACTION_EAT;
       }
-      if (cleanGap == worst) {
+      if (s.cleanness == lowest) {
         return CARE_ACTION_BATH;
       }
       return playOrPet(s, CARE_BORED_EXCITEMENT);
+    }
+
+    // Replaces a suggestion the player has no way to act on. A meal has to be
+    // bought, so with less than the cheapest item on the shelves "Eat" is a dead
+    // end, and playing a round is how coins are earned.
+    //
+    // Deliberately separate from suggest() rather than folded into the ranking,
+    // because the coin balance is not one of the model's features: labeling
+    // training rows with it would teach the network to answer Play on hungry
+    // rows for reasons it cannot observe. CareActionPredictor applies this to
+    // whichever action wins, so the constraint is enforced rather than learned.
+    //
+    // A broke *and* starving pet gets Play even though a round costs it more
+    // hunger — there is no other way out, so the alternative is advice that
+    // cannot be followed.
+    static CareAction affordableAlternative(CareAction action) {
+      if (action == CARE_ACTION_EAT && GameProgress::getCoins() < groceryCheapestCost()) {
+        return CARE_ACTION_PLAY;
+      }
+      return action;
     }
 
     static const char *actionName(CareAction action) {
@@ -89,16 +102,6 @@ class CareActionRules {
     }
 
   private:
-    // How far a stat sits below its target, as a percentage of that target: 0 at
-    // or above it, 100 when empty. Ranking percentages rather than raw points
-    // keeps the comparison meaningful if the targets ever diverge.
-    static int deficitPct(int value, int target) {
-      if (target <= 0 || value >= target) {
-        return 0;
-      }
-      return ((target - value) * 100) / target;
-    }
-
     // A round costs hunger and cleanness, so the pet has to be able to pay.
     static bool canAffordPlay(const PetTotoroStats &s) {
       return s.hunger > (PET_GAME_PLAY_HUNGER_COST + CARE_PLAY_COST_MARGIN) &&

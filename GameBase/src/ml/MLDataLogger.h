@@ -30,6 +30,9 @@ class MLDataLogger {
     static void onGameEnd(int gameId, GameOutcome outcome, int score, int difficulty, uint16_t sessionSeconds);
 
     static GameplaySample buildSample(int gameId, GameOutcome outcome);
+    // buildSample() against the remembered last-game context, so an at-home
+    // suggestion sees the same features the hub training rows carried.
+    static GameplaySample buildHubSample();
 
   private:
     static uint8_t sessionGames;
