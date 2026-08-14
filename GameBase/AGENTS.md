@@ -364,6 +364,22 @@ in a scene tick. Two findings worth keeping:
   the search reads as optimistic. Odd depths measurably underperformed the even
   depth below them.
 
+### And so is the pet's hold threshold
+
+`tools/check_hold_travel.py` measures, from the captured gestures, how far the
+finger has travelled at the moment a hold on Totoro would fire, and checks that
+`PET_GRAB_MAX_TRAVEL_PX` still sits in the gap between a real hold and the
+nearest stroke of any other kind. It reads both constants out of
+`src/Scene_PetTotoro.h` and exits non-zero when they have drifted, so **rerun it
+after touching `PET_GRAB_HOLD_MS`** — the hold opens the menu mid-contact, so a
+false positive interrupts whatever the finger was really doing.
+
+The travel gap, not comfort, is what sets the floor on the hold time. At 350 ms a
+hold covers at most 28 px while nothing else that lasts that long covers under
+92 px; drop to 300 ms and a stroke appears that has moved only 6 px, overlapping
+holds outright, and no travel budget can separate them. The captures live under
+gitignored `tinyml/data/`, so the tool skips cleanly without them.
+
 ### Rule of thumb
 
 > Animate with `renderScene()`. Reach for `renderFullScreen()` only for a

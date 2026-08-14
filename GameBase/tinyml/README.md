@@ -723,8 +723,7 @@ always did.
 | poke | on the pet | stops, stands, turns to face you (~100 ms after the tap) |
 | poke | empty floor | walks over and stands on that spot |
 | double poke | on the pet | says a greeting in a speech bubble |
-| hold, then let go | on the pet | opens the radial menu — **live tier**, see below |
-| hold, then move | on the pet | picks it up to carry — **live tier** |
+| hold (350 ms) | on the pet | opens the radial menu, without waiting for the finger to lift — **live tier**, see below |
 | brush | on the pet | petting: `doPet()`, love note, a happy wiggle |
 | swipe | on the pet | trots to the far wall and sulks facing it |
 | circle / zigzag | anywhere | dances for 4.5 s |
@@ -763,50 +762,48 @@ one of the other seven.
 
 ### The live tier
 
-Dragging cannot go through the model, not even through the early preview: both fire on
-*lift*, and a pet that only starts following your finger after you let go is broken.
+The menu cannot go through the model, not even through the early preview: both fire on
+*lift*, and the menu is supposed to appear while the finger is still down.
 
-One hold serves both the menu and carrying, because the two are told apart by what the
-finger does *next*, the way long-press-then-drag works on a phone:
+So the hold is read directly from the scene's own touch reads. Once contact has lasted
+`PET_GRAB_HOLD_MS` (350 ms) and travel is still under budget, `openMenu()` runs there and
+then, and `TouchSampler::abortEpisode()` takes the contact away from the classifier so
+lifting off does not fire a poke on top of the menu. Two details make that safe: the
+overlay only acts on a *rising* touch edge, so the finger that opened the menu is not also
+read as a tap on whatever now sits under it, and `openMenu()` calls `cancelDrag()`, which
+clears the press state that is now spoken for.
 
-1. `TouchSampler::contactHoldMs()` reaches `PET_GRAB_HOLD_MS` (400 ms) with the episode
-   still stationary → the hold **arms**: a short blip acknowledges it and
-   `TouchSampler::abortEpisode()` takes the contact away from the classifier, whichever
-   way it goes from here.
-2. The finger moves `PET_CARRY_BREAK_PX` (10 px) from where it armed → `startDrag()`,
-   and Totoro is in hand.
-3. The finger lifts instead → `openMenu()`.
+**Firing mid-contact means the hold cannot also mean "carry me".** It used to: the hold
+*armed* at 400 ms with a blip, and then moving 10 px picked Totoro up while lifting opened
+the menu, the way long-press-then-drag works on a phone. Opening at the threshold consumes
+the press, so **gesture builds can no longer pick Totoro up at all.** That was the
+accepted cost of a menu that appears when the hold completes rather than when the finger
+leaves. Non-gesture builds still drag on movement alone and still open the menu on a plain
+tap.
 
-The blip matters: without it a hold looks ignored until release, since nothing visible
-can happen at step 1 while both outcomes are still open. The anchor for step 2 is where
-the finger was when it *armed*, not where it first landed, so a hold that drifted slowly
-under the 80 px travel budget does not instantly count as having moved.
-
-**Travel alone never starts a drag in gesture builds.** The old rule — a press that
-moves 6 px becomes a drag — had to go, because it claimed every stroke that began on the
-pet before the classifier could see it, so a swipe across Totoro *was* a drag and a brush
-could never be petting. Non-gesture builds keep the travel trigger and open the menu on a
-plain tap, exactly as before.
-
-Arming has to be distinguished from a slow brush stroke over the same spot, which
-duration alone cannot do: 10 captured brushes hold one stroke past 400 ms. Travel
-separates them completely. At the instant contact reaches 400 ms, measured as **path
-length** — a brush that strokes back and forth ends up near where it started, so
-displacement would read it as a hold:
+Travel is still what separates a hold from a slow brush stroke over the same spot, which
+duration alone cannot do: 10 captured brushes hold one stroke past 350 ms. It is measured
+as **path length** — a brush that strokes back and forth ends up near where it started, so
+displacement would read it as a hold. At the instant contact reaches 350 ms:
 
 | | travel covered |
 |---|---|
-| `long_press`, 40 captures that get that far | 5–23 px |
-| every brush/circle/zigzag/scribble that lasts that long | 96–599 px |
+| `long_press`, 41 captures that get that far | 3–28 px |
+| every brush/circle/zigzag/scribble that lasts that long | 92–576 px |
 
-`PET_GRAB_MAX_TRAVEL_PX` is 80, in a gap that nothing in 642 episodes occupies. No poke,
-double poke or swipe stays down for 400 ms at all.
+`PET_GRAB_MAX_TRAVEL_PX` is 60, the middle of that gap. No poke, double poke or swipe
+stays down for 350 ms at all.
+
+**350 ms is the floor, and the travel gap is what sets it**, not comfort. Re-measured at
+300 ms the gap collapses: a stroke exists that has moved only 6 px by then, overlapping the
+hold range outright, and no travel budget can separate them. The margin is only there
+because a hold is deliberately still.
 
 Both the duration and the travel are measured from the **scene's own** touch reads on the
 50 ms tick, not from `TouchSampler`. That is deliberate: the fast sampler only engages
 above `TOUCH_FAST_Z_ENGAGE`, so a press too light for it would otherwise leave the pet
-with no reachable menu, and a stale travel figure from the previous episode could block
-arming outright. The figures above are resampled to that same 50 ms tick, which widens
+with no reachable menu, and a stale travel figure from the previous episode could block the
+hold outright. The figures above are resampled to that same 50 ms tick, which widens
 the gap rather than narrowing it.
 
 Everything else that owns a touch aborts the episode too: the radial menu, the play

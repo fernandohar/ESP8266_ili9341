@@ -103,27 +103,28 @@
 #define PET_DRAG_RELEASE_TICKS 2
 
 // --- Touch gestures (esp32-gesture builds) --------------------------------
-// Holding still on Totoro *arms* the hold: a blip acknowledges it, and from there
-// letting go opens the menu while moving on picks Totoro up instead. One hold serves
-// both because they are told apart by what the finger does next, the way long-press
-// then drag works on a phone.
+// Holding still on Totoro opens the action menu, and it opens as soon as the hold is
+// long enough rather than waiting for the finger to lift - the menu appears under a
+// finger that is still down.
 //
-// Arming is decided live rather than by the classifier, for two reasons: carrying has
-// to begin while the finger is still down, and the menu is the one interaction that
-// cannot afford a 5% miss rate. `GESTURE_LONG_PRESS` therefore never reaches
-// handleGesture(); it stays in the class set only so the model is not forced to file
-// holds under some other gesture.
-#define PET_GRAB_HOLD_MS 400
+// The hold is read live rather than by the classifier: the menu is the one
+// interaction that cannot afford a 5% miss rate, and firing mid-contact means there
+// is no lift for an episode to be built from anyway. `GESTURE_LONG_PRESS` therefore
+// never reaches handleGesture(); it stays in the class set only so the model is not
+// forced to file holds under some other gesture.
+//
+// Firing mid-contact consumes the press, so a hold can no longer go on to mean
+// "carry me" the way long-press-then-drag does on a phone. Gesture builds have no
+// way to pick Totoro up as a result; plain builds still drag it on movement alone.
+#define PET_GRAB_HOLD_MS 350
 // ...and only if the finger stayed put, which is what separates a hold from a slow
-// brush stroke over the same spot. Measured across all 642 captures, resampled to the
+// brush stroke over the same spot. Measured across every capture, resampled to the
 // 50 ms game tick the scene actually reads the panel on, at the instant contact
-// reaches PET_GRAB_HOLD_MS: a real long press had covered 5-23 px, while every brush,
-// circle, zigzag or scribble that lasts that long had covered at least 96 px.
-#define PET_GRAB_MAX_TRAVEL_PX 80.0f
-// How far the finger has to move after arming to mean "carry me" rather than "menu".
-// Intent is already established by then, so this only has to clear touch jitter; the
-// plain drag threshold in non-gesture builds is 6 px and works.
-#define PET_CARRY_BREAK_PX 10
+// reaches PET_GRAB_HOLD_MS: a real long press had covered at most 28 px, while the
+// nearest stroke of any other kind had covered 92 px, so this sits midway.
+// That gap is also the floor on the hold time - by 300 ms there is a stroke that has
+// moved only 6 px, and holds stop being separable from strokes at all.
+#define PET_GRAB_MAX_TRAVEL_PX 60.0f
 // A poke on empty floor sends Totoro walking there; a swipe sends it to the wall
 // in a hurry.
 #define PET_WALK_TO_SPEED 1.8f
@@ -349,16 +350,17 @@ class Scene_PetTotoro : public GameScene {
           pressLastX = (int16_t)touchX;
           pressLastY = (int16_t)touchY;
         }
-        if (!dragging) {
-          if (!holdArmed) {
-            if ((now - pressStartMs) >= PET_GRAB_HOLD_MS &&
-                pressTravelPx < PET_GRAB_MAX_TRAVEL_PX) {
-              armHold(touchX, touchY);
-            }
-          } else if (abs((int16_t)touchX - holdAnchorX) >= PET_CARRY_BREAK_PX ||
-                     abs((int16_t)touchY - holdAnchorY) >= PET_CARRY_BREAK_PX) {
-            startDrag();  // moved on after the hold: carry it instead
-          }
+        if ((now - pressStartMs) >= PET_GRAB_HOLD_MS &&
+            pressTravelPx < PET_GRAB_MAX_TRAVEL_PX) {
+          // Held still long enough. The menu opens now, under the finger, rather
+          // than on release. This contact belongs to the live tier, so the
+          // classifier must not also get it and fire a second reaction on lift.
+          TouchSampler::abortEpisode();
+          openMenu();  // clears the press state via cancelDrag()
+          // Leaving wasTouching set means the overlay does not see the finger that
+          // opened it as a fresh tap on whatever sits under it.
+          wasTouching = isTouching;
+          return;
         }
 #endif
         updateDrag(touchX, touchY);
@@ -367,13 +369,9 @@ class Scene_PetTotoro : public GameScene {
           dragReleaseTicks++;
         } else if (releasePress(now)) {
 #if defined(TINYML_GESTURE_INFERENCE)
-          if (holdArmed) {
-            holdArmed = false;
-            openMenu();  // held still and let go, rather than moving on to carry
-            wasTouching = isTouching;
-            return;
-          }
-          // Any shorter press is the classifier's to interpret: one poke gets
+          // A press that lasted long enough to be a hold already opened the menu
+          // while the finger was down, so anything still pressed at release is
+          // shorter than that and the classifier's to interpret: one poke gets
           // Totoro's attention, two get a greeting. Acting here would fire first and
           // every time, so the release does nothing but let go.
 #else
@@ -445,7 +443,6 @@ class Scene_PetTotoro : public GameScene {
 #if defined(TINYML_GESTURE_INFERENCE)
       hasWalkTarget = false;
       havePreviewActed = false;
-      holdArmed = false;
 #endif
       petSession = PET_PET_MAX_SESSION;
       petCooldownUntilMs = 0;
@@ -595,14 +592,6 @@ class Scene_PetTotoro : public GameScene {
     // closed episode is recognised and ignored.
     bool havePreviewActed = false;
     unsigned long previewActedStartMs = 0;
-
-    // A hold that has been recognised but not yet resolved into either the menu (let
-    // go) or a carry (move on). The anchor is where the finger was when it armed, not
-    // where it first landed, so a hold that drifted slowly does not instantly count
-    // as having moved.
-    bool holdArmed = false;
-    int16_t holdAnchorX = 0;
-    int16_t holdAnchorY = 0;
 
     // How long this press has lasted and how far it has wandered, measured from the
     // scene's own touch reads rather than from TouchSampler. The menu hangs off these,
@@ -1166,7 +1155,6 @@ class Scene_PetTotoro : public GameScene {
       dragging = false;
       dragReleaseTicks = 0;
 #if defined(TINYML_GESTURE_INFERENCE)
-      holdArmed = false;
       pressStartMs = millis();
       pressTravelPx = 0.0f;
       pressLastX = (int16_t)touchX;
@@ -1178,26 +1166,11 @@ class Scene_PetTotoro : public GameScene {
       grabOffsetY = (int16_t)a->y - (int16_t)touchY;
     }
 
-#if defined(TINYML_GESTURE_INFERENCE)
-    // The hold has been recognised. Nothing visible happens yet - what it means
-    // depends on whether the finger now leaves or moves - so a short blip is the
-    // acknowledgement, without which a hold would feel ignored until release.
-    void armHold(uint16_t touchX, uint16_t touchY) {
-      holdArmed = true;
-      holdAnchorX = (int16_t)touchX;
-      holdAnchorY = (int16_t)touchY;
-      // This contact belongs to the live tier from here on, whichever way it goes.
-      TouchSampler::abortEpisode();
-      addSound(NOTE_E4, noteDurationMs(32, 700));
-    }
-#endif
-
     void startDrag() {
       Pet &p = pets[0];
       dragging = true;
       dropping = false;
 #if defined(TINYML_GESTURE_INFERENCE)
-      holdArmed = false;
       // This contact belongs to the live tier now. Without this the classifier
       // would also get it once the finger lifted and fire a second behaviour on
       // top of the drag.
@@ -1517,7 +1490,6 @@ class Scene_PetTotoro : public GameScene {
       dragReleaseTicks = 0;
 #if defined(TINYML_GESTURE_INFERENCE)
       hasWalkTarget = false;
-      holdArmed = false;
 #endif
       Pet &p = pets[0];
       if (p.avatar != NULL) {
