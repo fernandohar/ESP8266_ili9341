@@ -44,6 +44,13 @@ class Scene_Settings : public GameScene {
         uint16_t touchX = 0;
         uint16_t touchY = 0;
         if (getTouchPoint(_tft, &touchX, &touchY)) {
+#if defined(TINYML_GESTURE_LOG)
+          if (inGestureButton(touchX, touchY)) {
+            *needChangeScene = true;
+            *nextSceneIndex = SCENE_GESTURE_CAPTURE;
+            return;
+          }
+#endif
           if (inCalButton(touchX, touchY)) {
             calibrate();
             return;
@@ -76,6 +83,15 @@ class Scene_Settings : public GameScene {
       _tft->setTextDatum(MC_DATUM);
       _tft->setTextColor(TFT_WHITE, bg);
       _tft->drawString("Settings", SCREENWIDTH / 2, 40, 4);
+
+#if defined(TINYML_GESTURE_LOG)
+      uint16_t gestureColor = rgb565(90, 140, 110);
+      _tft->fillRoundRect(BTN_X, GESTURE_BTN_Y, BTN_W, GESTURE_BTN_H, 6, gestureColor);
+      _tft->drawRoundRect(BTN_X, GESTURE_BTN_Y, BTN_W, GESTURE_BTN_H, 6, TFT_WHITE);
+      _tft->setTextColor(TFT_WHITE, gestureColor);
+      _tft->drawString("Gesture Capture", SCREENWIDTH / 2,
+                       GESTURE_BTN_Y + GESTURE_BTN_H / 2, 2);
+#endif
 
 #if !defined(WOKWI_CAP_TOUCH)
       uint16_t btnColor = rgb565(70, 130, 180);
@@ -113,6 +129,13 @@ class Scene_Settings : public GameScene {
     static const int16_t RESET_BTN_Y = 196;
     static const int16_t RESET_BTN_H = 52;
 
+#if defined(TINYML_GESTURE_LOG)
+    // Squeezed into the gap between the title and the calibrate button; only the
+    // capture build has it.
+    static const int16_t GESTURE_BTN_Y = 58;
+    static const int16_t GESTURE_BTN_H = 30;
+#endif
+
     // How long the factory-reset button stays "armed" waiting for the second
     // confirming tap before it disarms itself.
     static const unsigned long RESET_ARM_WINDOW_MS = 4000;
@@ -145,6 +168,13 @@ class Scene_Settings : public GameScene {
                        SCREENWIDTH / 2, RESET_BTN_Y + RESET_BTN_H + 16, 2);
       _tft->setTextDatum(TL_DATUM);
     }
+
+#if defined(TINYML_GESTURE_LOG)
+    bool inGestureButton(uint16_t x, uint16_t y) {
+      return x >= BTN_X && x < (BTN_X + BTN_W) &&
+             y >= GESTURE_BTN_Y && y < (GESTURE_BTN_Y + GESTURE_BTN_H);
+    }
+#endif
 
     bool inResetButton(uint16_t x, uint16_t y) {
       return x >= BTN_X && x < (BTN_X + BTN_W) &&

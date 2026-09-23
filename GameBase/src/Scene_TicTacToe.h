@@ -437,12 +437,16 @@ class Scene_TicTacToe : public GameScene {
       } else {
         msg = (winner == TTT_X) ? "CAT BUS WINS!" : "MEI WINS!";
       }
-      // Reward the pet: in 1P the human is X (win iff X wins); in 2P any decisive
-      // result counts as a win for the play session.
-      bool playerWon = (numPlayers != 1) || (winner == TTT_X);
-      GameOutcome outcome = playerWon ? GAME_RESULT_WIN : GAME_RESULT_LOSS;
-      GameResult::report(outcome, playerWon ? TTT_WIN_COINS : 0);
-      mlLogGameEnd(SCENE_TIC_TAC_TOE, outcome, boardMoveCount(), numPlayers, gameSessionSeconds());
+      // Reward the pet: 1P uses win/loss; 2P is casual (+1 excitement only).
+      if (numPlayers == 1) {
+        bool playerWon = (winner == TTT_X);
+        GameOutcome outcome = playerWon ? GAME_RESULT_WIN : GAME_RESULT_LOSS;
+        GameResult::report(outcome, playerWon ? TTT_WIN_COINS : 0);
+        mlLogGameEnd(SCENE_TIC_TAC_TOE, outcome, boardMoveCount(), numPlayers, gameSessionSeconds());
+      } else {
+        GameResult::report(GAME_RESULT_NEUTRAL, 0);
+        mlLogGameEnd(SCENE_TIC_TAC_TOE, GAME_RESULT_NEUTRAL, boardMoveCount(), numPlayers, gameSessionSeconds());
+      }
       drawResult(msg);
       addSound(NOTE_G5, noteDurationMs(8, 800));
       addSound(NOTE_C6, noteDurationMs(8, 800));
@@ -452,8 +456,13 @@ class Scene_TicTacToe : public GameScene {
       // Flush the final placed token before we stop calling renderScene().
       renderScene();
       state = TTT_STATE_DRAW;
-      GameResult::report(GAME_RESULT_LOSS, 0);  // consolation reward for a draw
-      mlLogGameEnd(SCENE_TIC_TAC_TOE, GAME_RESULT_LOSS, boardMoveCount(), numPlayers, gameSessionSeconds());
+      if (numPlayers == 1) {
+        GameResult::report(GAME_RESULT_LOSS, 0);
+        mlLogGameEnd(SCENE_TIC_TAC_TOE, GAME_RESULT_LOSS, boardMoveCount(), numPlayers, gameSessionSeconds());
+      } else {
+        GameResult::report(GAME_RESULT_NEUTRAL, 0);
+        mlLogGameEnd(SCENE_TIC_TAC_TOE, GAME_RESULT_NEUTRAL, boardMoveCount(), numPlayers, gameSessionSeconds());
+      }
       drawResult("DRAW");
       addSound(NOTE_E4, noteDurationMs(8, 700));
       addSound(NOTE_E4, noteDurationMs(8, 700));

@@ -9,7 +9,7 @@ void GameResult::report(GameOutcome outcome, int coins, int happiness) {
   s_happiness = happiness;
   if (outcome == GAME_RESULT_WIN) {
     s_coinsOwed += (coins >= 0) ? coins : GAME_WIN_DEFAULT_COINS;
-  } else if (outcome == GAME_RESULT_LOSS) {
+  } else if (outcome == GAME_RESULT_LOSS || outcome == GAME_RESULT_NEUTRAL) {
     s_coinsOwed += GAME_LOSS_CONSOLATION_COINS;
   }
 }

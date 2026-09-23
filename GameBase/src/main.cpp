@@ -22,6 +22,12 @@
 #include "Scene_Grocery.h"
 #include "Scene_CatBusCross.h"
 #include "Scene_CoinReward.h"
+#include "Scene_SlidePuzzle.h"
+#include "Scene_Klotski.h"
+#include "Scene_ConnectFour.h"
+#if defined(TINYML_GESTURE_LOG)
+#include "Scene_GestureCapture.h"
+#endif
 #include "TouchCalibration.h"
 #include "PetSave.h"
 #include "PetClock.h"
@@ -84,6 +90,22 @@ bool isTouching() {
 
   return true;
 }
+
+// The capacitive controller is already a single fast I2C read, so the gesture
+// sampler shares the ordinary path and has no guards to report on.
+bool sampleTouchFast(uint16_t *x, uint16_t *y) {
+  if (!isTouching()) {
+    return false;
+  }
+  return readTouchPoint(x, y);
+}
+
+void touchFastResetStats() {}
+
+void touchFastStats(uint16_t *pressureDrops, uint16_t *jitterDrops) {
+  *pressureDrops = 0;
+  *jitterDrops = 0;
+}
 #else
 // Real hardware: XPT2046 resistive touch on the shared SPI bus. TFT_eSPI polls the
 // controller directly (no IRQ pin needed), so we read + cache the point once per frame.
@@ -116,6 +138,93 @@ bool isTouching() {
   currentTouchY = y;
   currentTouchValid = true;
 
+  return true;
+}
+
+// Delay-free single-shot read for the gesture sampler. TFT_eSPI's getTouch()
+// averages five validTouch() passes, each with its own settling delay()s, so one
+// call costs tens of milliseconds - far too slow to sample a stroke at 60 Hz.
+// This reads pressure once, takes two back-to-back positions, averages them, and
+// rejects the pair only if they disagree wildly.
+//
+// The first capture session showed half the reads being rejected here, which
+// halved the effective sample rate, so both guards are deliberately loose:
+//
+//  - The deadband is in raw ADC counts. The panel spans ~3300 counts over 240 px,
+//    so ~14 counts per pixel; 120 counts is ~8 px of tolerated disagreement.
+//    Back-to-back raw reads are noisier than TFT_eSPI's, because it lets the
+//    panel settle between samples and this cannot afford to.
+//  - Losing pressure keeps the contact "engaged" for the same window the
+//    segmenter uses to end a stroke. Dropping it on the first dip meant a
+//    momentary light spot mid-brush demanded a full re-press to resume.
+#define TOUCH_FAST_Z_ENGAGE 600
+#define TOUCH_FAST_Z_SUSTAIN 120
+#define TOUCH_FAST_DEADBAND 120
+#define TOUCH_FAST_ENGAGE_HOLD_MS 48
+
+static bool fastTouchEngaged = false;
+static unsigned long fastTouchLastAcceptMs = 0;
+static uint16_t fastTouchRejectZ = 0;
+static uint16_t fastTouchRejectJitter = 0;
+
+// Rejections that happened while a stroke was in progress, so a future capture
+// session reports which guard is costing samples instead of needing a guess.
+void touchFastResetStats() {
+  fastTouchRejectZ = 0;
+  fastTouchRejectJitter = 0;
+}
+
+void touchFastStats(uint16_t *pressureDrops, uint16_t *jitterDrops) {
+  *pressureDrops = fastTouchRejectZ;
+  *jitterDrops = fastTouchRejectJitter;
+}
+
+bool sampleTouchFast(uint16_t *x, uint16_t *y) {
+  if (tft == NULL) {
+    return false;
+  }
+
+  unsigned long now = millis();
+
+  // Hysteresis: a firm press starts a stroke, a lighter one sustains it, so
+  // pressure dips mid-brush don't chop one stroke into several.
+  uint16_t z = tft->getTouchRawZ();
+  if (z <= (fastTouchEngaged ? TOUCH_FAST_Z_SUSTAIN : TOUCH_FAST_Z_ENGAGE)) {
+    if (fastTouchEngaged) {
+      if ((now - fastTouchLastAcceptMs) > TOUCH_FAST_ENGAGE_HOLD_MS) {
+        fastTouchEngaged = false;
+      } else {
+        fastTouchRejectZ++;
+      }
+    }
+    return false;
+  }
+
+  uint16_t rawX1 = 0, rawY1 = 0, rawX2 = 0, rawY2 = 0;
+  tft->getTouchRaw(&rawX1, &rawY1);
+  tft->getTouchRaw(&rawX2, &rawY2);
+  if (abs((int)rawX1 - (int)rawX2) > TOUCH_FAST_DEADBAND ||
+      abs((int)rawY1 - (int)rawY2) > TOUCH_FAST_DEADBAND) {
+    if (fastTouchEngaged) {
+      fastTouchRejectJitter++;
+    }
+    return false;
+  }
+
+  // Averaging the pair costs nothing and halves the read noise.
+  uint16_t screenX = (uint16_t)(((uint32_t)rawX1 + rawX2) / 2);
+  uint16_t screenY = (uint16_t)(((uint32_t)rawY1 + rawY2) / 2);
+  tft->convertRawXY(&screenX, &screenY);
+  // convertRawXY subtracts the calibration origin in unsigned arithmetic, so an
+  // off-panel read wraps to a huge value rather than going negative.
+  if (screenX >= SCREENWIDTH || screenY >= SCREENHEIGHT) {
+    return false;
+  }
+
+  fastTouchEngaged = true;
+  fastTouchLastAcceptMs = now;
+  *x = screenX;
+  *y = screenY;
   return true;
 }
 #endif
@@ -210,6 +319,12 @@ void setup() {
   manager->appendScene(new Scene_Grocery(tft));             // 6 - Grocery (Eat)
   manager->appendScene(new Scene_CatBusCross(tft));         // 7 - Cat Bus Cross
   manager->appendScene(new Scene_CoinReward(tft));          // 8 - Coin reward
+  manager->appendScene(new Scene_SlidePuzzle(tft));         // 9 - Slide Puzzle
+  manager->appendScene(new Scene_Klotski(tft));             // 10 - Klotski
+  manager->appendScene(new Scene_ConnectFour(tft));         // 11 - Four in a Row
+#if defined(TINYML_GESTURE_LOG)
+  manager->appendScene(new Scene_GestureCapture(tft));      // 12 - Gesture capture
+#endif
 
   manager->startScene(SCENE_PET_TOTORO);
 

@@ -2,7 +2,32 @@
 #include "SoundPlayer.h"
 #include "SpriteAsset.h"
 
+#if defined(GESTURE_TOUCH_SAMPLER)
+#include "ml/TouchSampler.h"
+#endif
+
 #define min(X, Y) (((X)<(Y))?(X):(Y))
+
+// Sampling the panel mid-repaint means borrowing the SPI bus the display is holding.
+// The transaction is closed and reopened around the read, which is safe between rows
+// because the address window is set per span anyway.
+//
+// Without this the sampler only runs once per loop(), so its interval is really the
+// frame time: measured on the *capture* screen, which draws almost nothing, 38% of
+// samples already land more than 32 ms apart and the worst is 95 ms. The pet room
+// draws far more, and a tap only lasts 60-100 ms, so an entire second tap of a double
+// poke could happen inside one frame and never be seen at all.
+void GameScene::serviceTouchSampler() {
+#if defined(GESTURE_TOUCH_SAMPLER)
+  const unsigned long now = millis();
+  if (!TouchSampler::pollDue(now)) {
+    return;  // cheap: no bus juggling unless there is actually a sample due
+  }
+  _tft->endWrite();
+  TouchSampler::poll(now);
+  _tft->startWrite();
+#endif
+}
 
 static uint16_t avatarSheetPixelRgb565(Avatar *avatar, uint16_t sheetX, uint16_t sheetY) {
   if (avatar->getSpriteAsset() != NULL) {
@@ -647,6 +672,7 @@ void GameScene  :: renderScene(boolean refreshBackground) {
           int8_t bufIdx = 0;
 
           for (int y = 0; y < renderHeight; y++) {
+            serviceTouchSampler();
             int16_t screenY = miny + y;
             int numSpans = collectRowRedrawSpans(screenY, minx, maxx,
                                                  unionDirtyMinx, unionDirtyMaxx,

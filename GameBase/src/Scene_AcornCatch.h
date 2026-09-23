@@ -21,7 +21,10 @@
 #include "sprite_soot_mole.h"
 #include "sprite_stopwatch.h"
 
-#define ACORN_CATCH_TARGET 30
+#define ACORN_WIN_TIME_ATTACK 35   // win when score > this at time-up
+#define ACORN_WIN_SURVIVAL 50
+#define ACORN_WIN_COLLECTOR 30     // win when score > this (early or at time-up)
+#define ACORN_CATCH_TARGET (ACORN_WIN_COLLECTOR + 1)
 // Per-mode starting clocks.
 #define ACORN_TIME_ATTACK_START_MS 30000
 #define ACORN_COLLECTOR_START_MS 40000
@@ -616,16 +619,16 @@ class Scene_AcornCatch : public GameScene {
       switch (m) {
         case ACORN_MODE_TIME_ATTACK: return "30s clock, +1s per acorn";
         case ACORN_MODE_SURVIVAL: return "3 lives, dodge the soot";
-        case ACORN_MODE_COLLECTOR: return "Collect 30 acorns";
+        case ACORN_MODE_COLLECTOR: return "Race the clock";
       }
       return "";
     }
 
     const char *modeDesc2(int m) const {
       switch (m) {
-        case ACORN_MODE_TIME_ATTACK: return "Grab all you can!";
-        case ACORN_MODE_SURVIVAL: return "Last as long as you can!";
-        case ACORN_MODE_COLLECTOR: return "before time runs out";
+        case ACORN_MODE_TIME_ATTACK: return "Win: 36+ acorns at time-up";
+        case ACORN_MODE_SURVIVAL: return "Win: 51+ acorns when out";
+        case ACORN_MODE_COLLECTOR: return "Win: 31+ before time runs out";
       }
       return "";
     }
@@ -790,49 +793,61 @@ class Scene_AcornCatch : public GameScene {
       requestRender();
     }
 
-    // Time Attack: the clock ran out. Coins = acorns collected, happiness =
-    // seconds actually played.
+    // Time Attack: the clock ran out. Win when score beats the mode threshold.
     void endTimeAttack() {
       if (state == ACORN_STATE_WON || state == ACORN_STATE_LOST) {
         return;
       }
-      state = ACORN_STATE_WON;
       freezeGameplay();
       resetHudCache();
 
       int playedSec = (int)((millis() - stateStartMs) / 1000);
       coinsEarned = score;
-      GameResult::report(GAME_RESULT_WIN, coinsEarned, playedSec);
-      logMlGameEnd(GAME_RESULT_WIN);
+      bool won = (score > ACORN_WIN_TIME_ATTACK);
+      state = won ? ACORN_STATE_WON : ACORN_STATE_LOST;
+      GameOutcome outcome = won ? GAME_RESULT_WIN : GAME_RESULT_LOSS;
+      GameResult::report(outcome, won ? coinsEarned : 0, won ? playedSec : -1);
+      logMlGameEnd(outcome);
 
       updateHudAvatars(millis());
-      showResultScreen("TIME UP", coinsEarned, "COINS");
-      addSound(NOTE_G5, noteDurationMs(6, 800));
-      addSound(NOTE_C6, noteDurationMs(4, 800));
+      if (won) {
+        showResultScreen("YOU WIN", coinsEarned, "COINS");
+        addSound(NOTE_G5, noteDurationMs(6, 800));
+        addSound(NOTE_C6, noteDurationMs(4, 800));
+      } else {
+        showEndMessage("TIME UP", "GAME OVER");
+        addSound(NOTE_G3, noteDurationMs(4, 600));
+        addSound(NOTE_E3, noteDurationMs(4, 600));
+      }
       requestRender();
     }
 
-    // Survival: Mei ran out of lives. Coins = acorns collected, happiness =
-    // seconds survived.
+    // Survival: Mei ran out of lives. Win when score beats the mode threshold.
     void endSurvival() {
       if (state == ACORN_STATE_WON || state == ACORN_STATE_LOST) {
         return;
       }
-      state = ACORN_STATE_LOST;
       freezeGameplay();
       resetHudCache();
 
       int survivedSec = (int)((millis() - stateStartMs) / 1000);
       coinsEarned = score;
-      // Still a positive play session, so grant the collected coins + time-based
-      // happiness (reported as a "win" so care-XP uses the better tier).
-      GameResult::report(GAME_RESULT_WIN, coinsEarned, survivedSec);
-      logMlGameEnd(GAME_RESULT_WIN);
+      bool won = (score > ACORN_WIN_SURVIVAL);
+      state = won ? ACORN_STATE_WON : ACORN_STATE_LOST;
+      GameOutcome outcome = won ? GAME_RESULT_WIN : GAME_RESULT_LOSS;
+      GameResult::report(outcome, won ? coinsEarned : 0, won ? survivedSec : -1);
+      logMlGameEnd(outcome);
 
       updateHudAvatars(millis());
-      showResultScreen("GAME OVER", coinsEarned, "COINS");
-      addSound(NOTE_G3, noteDurationMs(6, 600));
-      addSound(NOTE_E3, noteDurationMs(6, 600));
+      if (won) {
+        showResultScreen("YOU WIN", coinsEarned, "COINS");
+        addSound(NOTE_G5, noteDurationMs(6, 800));
+        addSound(NOTE_C6, noteDurationMs(4, 800));
+      } else {
+        showResultScreen("GAME OVER", coinsEarned, "COINS");
+        addSound(NOTE_G3, noteDurationMs(6, 600));
+        addSound(NOTE_E3, noteDurationMs(6, 600));
+      }
       requestRender();
     }
 

@@ -71,7 +71,7 @@ class Scene_Status : public GameScene {
     // line only appears sometimes, but both now clear the Back button.
     static const int16_t STATS_Y = 70;
     static const int16_t STATS_ROW_H = 30;
-    static const int16_t COINS_Y = 196;
+    static const int16_t COINS_Y = 166;
     static const int16_t SICK_Y = 240;
 
     boolean wasTouching = false;
@@ -95,17 +95,16 @@ class Scene_Status : public GameScene {
 
       int16_t y = STATS_Y;
       const PetTotoroStats &s = PetTotoroState::stats();
-      meterRow(y, "Health", s.health);
-      meterRow(y + STATS_ROW_H, "Hunger", s.hunger);
-      meterRow(y + STATS_ROW_H * 2, "Happy", s.happiness);
-      meterRow(y + STATS_ROW_H * 3, "Clean", s.cleanness);
+      meterRow(y, "Hunger", s.hunger);
+      meterRow(y + STATS_ROW_H, "Happy", s.happiness);
+      meterRow(y + STATS_ROW_H * 2, "Clean", s.cleanness);
 
       drawCoins(COINS_Y);
 
       if (PetTotoroState::isSick()) {
         _tft->setTextDatum(MC_DATUM);
         _tft->setTextColor(rgb565(240, 120, 120), back);
-        _tft->drawString("Feeling sick - care for it!", SCREENWIDTH / 2, SICK_Y, 2);
+        _tft->drawString("Feeling unhappy - care for it!", SCREENWIDTH / 2, SICK_Y, 2);
       }
 
       drawBackButton();

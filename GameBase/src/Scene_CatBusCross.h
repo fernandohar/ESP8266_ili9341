@@ -54,6 +54,8 @@
 #define CBC_INTRO_GRACE_MS 350
 #define CBC_HIT_HOLD_MS 700
 #define CBC_START_ATTEMPTS 3
+// Win when Mei reaches the goal within this many milliseconds.
+#define CBC_WIN_TIME_MS 8000
 // Collision inset: a graze that only clips the outline should not count.
 #define CBC_HIT_INSET 3
 
@@ -467,6 +469,11 @@ class Scene_CatBusCross : public GameScene {
     }
 
     void winRound() {
+      unsigned long elapsed = millis() - roundStartMs;
+      if (elapsed > CBC_WIN_TIME_MS) {
+        loseRound();
+        return;
+      }
       state = CBC_STATE_WON;
       int reward = 4 + attemptsLeft * 2;
       GameResult::report(GAME_RESULT_WIN, reward);

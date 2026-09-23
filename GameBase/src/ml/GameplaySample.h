@@ -8,9 +8,9 @@
 struct GameplaySample {
   float hungerNorm;
   float happinessNorm;
-  float healthNorm;
+  float excitementNorm;
   float cleanNorm;
-  float isSick;           // 0 or 1
+  float isUnhappy;        // 0 or 1 (happiness very low)
   float lastGameIdNorm;   // gameId / MAX_GAME_ID
   float lastOutcomeWin;   // 1 = win, 0 = loss/none
   float sessionGamesNorm; // min(sessionGames, cap) / cap
@@ -27,7 +27,8 @@ enum CareAction : uint8_t {
 
 enum GameplayEventKind : uint8_t {
   GAMEPLAY_EVENT_HUB_VISIT = 0,
-  GAMEPLAY_EVENT_GAME_END = 1
+  GAMEPLAY_EVENT_GAME_END = 1,
+  GAMEPLAY_EVENT_CARE_STATE = 2   // right after a care action landed
 };
 
 #endif

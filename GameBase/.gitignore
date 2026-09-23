@@ -14,3 +14,5 @@ __pycache__/
 tinyml/.venv/
 tinyml/data/
 tinyml/models/
+# Compiled on demand by prepare_gestures.py from src/ml/GestureFeatures.h.
+tinyml/host/gesture_features
